@@ -30,10 +30,11 @@ services:
           name: platform-api
           property: host
 
-  # The Frontend Dashboard (React Static Site)
-  - type: static
-    name: platform-frontend
-    rootDir: frontend
+# The Frontend Dashboard (React Static Site)
+- type: static site # <--- THIS IS THE CORRECT LINE
+  name: platform-frontend
+  rootDir: frontend
+  # ... rest of the frontend configuration
     buildCommand: npm install && npm run build
     publishDir: dist
     # This rule is crucial for a Single-Page App (SPA)
