@@ -1,5 +1,9 @@
+databases:
+  - name: platform-db
+    plan: free
+    databaseName: myhostingplatform
+
 services:
- 
   - type: web
     name: platform-api
     env: node
@@ -15,18 +19,7 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
-      - key: FRONTEND_URL
-        fromService:
-          type: static site
-          name: platform-frontend
-          property: url
-      - key: RENDER_EXTERNAL_HOSTNAME
-        fromService:
-          type: web
-          name: platform-api
-          property: host
 
-  # Service 2: The Frontend Dashboard (React Static Site)
   - type: static site
     name: platform-frontend
     rootDir: frontend
@@ -35,9 +28,3 @@ services:
     rewrites:
       - source: /*
         destination: /index.html
-
-databases:
-  # Service 3: The MongoDB Database
-  - name: platform-db
-    plan: free
-    databaseName: myhostingplatform
