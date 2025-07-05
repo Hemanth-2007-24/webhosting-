@@ -1,5 +1,5 @@
 services:
-  # Service 1: The Backend API (Node.js)
+ 
   - type: web
     name: platform-api
     env: node
