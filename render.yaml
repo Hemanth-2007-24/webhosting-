@@ -1,8 +1,5 @@
-# render.yaml
-# This Blueprint deploys your entire platform: API, Frontend, and Database.
-
 services:
-  # The Backend API (Node.js)
+  # Service 1: The Backend API (Node.js)
   - type: web
     name: platform-api
     env: node
@@ -10,40 +7,37 @@ services:
     rootDir: backend
     buildCommand: npm install
     startCommand: node server.js
-    healthCheckPath: /api/health # We'll add this simple endpoint
+    healthCheckPath: /api/health
     envVars:
       - key: MONGO_URI
         fromDatabase:
           name: platform-db
           property: connectionString
       - key: JWT_SECRET
-        generateValue: true # Render will create a secure secret
+        generateValue: true
       - key: FRONTEND_URL
         fromService:
-          type: static
+          type: static site
           name: platform-frontend
           property: url
-      # The backend needs to know its own public domain for the reverse proxy
       - key: RENDER_EXTERNAL_HOSTNAME
         fromService:
           type: web
           name: platform-api
           property: host
 
-# The Frontend Dashboard (React Static Site)
-- type: static site # <--- THIS IS THE CORRECT LINE
-  name: platform-frontend
-  rootDir: frontend
-  # ... rest of the frontend configuration
+  # Service 2: The Frontend Dashboard (React Static Site)
+  - type: static site
+    name: platform-frontend
+    rootDir: frontend
     buildCommand: npm install && npm run build
     publishDir: dist
-    # This rule is crucial for a Single-Page App (SPA)
     rewrites:
       - source: /*
         destination: /index.html
 
 databases:
-  # Free MongoDB instance provided by Render
+  # Service 3: The MongoDB Database
   - name: platform-db
     plan: free
     databaseName: myhostingplatform
