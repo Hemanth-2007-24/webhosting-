@@ -155,10 +155,42 @@ app.get('/api/projects', authMiddleware, async (req, res) => {
     }
 });
 
-// DEPLOYMENT ROUTE (IMPROVED WITH DETAILED LOGGING)
+// ** NEW ** DELETE PROJECT ROUTE
+app.delete('/api/projects/:id', authMiddleware, async (req, res) => {
+    try {
+        const projectId = req.params.id;
+        const project = await Project.findById(projectId);
+
+        // Verify project exists and belongs to the user
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found.' });
+        }
+        if (project.owner.toString() !== req.user.id) {
+            return res.status(403).json({ message: 'Forbidden: You do not own this project.' });
+        }
+
+        // 1. Delete the deployed files from the disk
+        const projectDeployPath = path.join(DEPLOYMENTS_DIR, project.id);
+        await fs.remove(projectDeployPath);
+        console.log(`[${project.name}] --> Files deleted from disk at ${projectDeployPath}`);
+
+        // 2. Delete the project record from the database
+        await Project.findByIdAndDelete(projectId);
+        console.log(`[${project.name}] --> Record deleted from database.`);
+
+        // Respond with 204 No Content for successful deletion
+        res.status(204).send();
+
+    } catch (error) {
+        console.error("Delete Project Error:", error);
+        res.status(500).json({ message: 'Server error while deleting project.' });
+    }
+});
+
+// DEPLOYMENT ROUTE
 app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) => {
     const { projectId, gitURL } = req.body;
-    let project; // Define project here to access it in the final catch block
+    let project;
 
     try {
         project = await Project.findById(projectId);
@@ -166,19 +198,17 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
             return res.status(404).json({ message: 'Project not found or you are not the owner.' });
         }
 
-        // Immediately respond to the client and update status to 'deploying'
         await project.updateOne({ status: 'deploying' });
         console.log(`[${project.name}] --> Deployment started.`);
         res.status(202).json({ message: 'Deployment accepted and is in progress.' });
 
-        // --- Asynchronous deployment process begins here ---
         const projectDeployPath = path.join(DEPLOYMENTS_DIR, project.id);
         
         console.log(`[${project.name}] STEP 1: Cleaning up old deployment at ${projectDeployPath}`);
         await fs.ensureDir(projectDeployPath);
         await fs.emptyDir(projectDeployPath);
         
-        if (gitURL) { // Deploy from Git
+        if (gitURL) {
             console.log(`[${project.name}] STEP 2: Cloning from Git URL: ${gitURL}`);
             const tempCloneDir = path.join(__dirname, 'uploads', `_temp_git_${project.id}`);
             await fs.emptyDir(tempCloneDir);
@@ -194,19 +224,13 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
             
             await fs.remove(tempCloneDir);
 
-        } else if (req.file) { // Deploy from ZIP
+        } else if (req.file) {
             console.log(`[${project.name}] STEP 2: Unzipping file: ${req.file.path}`);
             await new Promise((resolve, reject) => {
                 fs.createReadStream(req.file.path)
                     .pipe(unzipper.Extract({ path: projectDeployPath }))
-                    .on('finish', () => {
-                        console.log(`[${project.name}] ... Unzip successful.`);
-                        resolve();
-                    })
-                    .on('error', (err) => {
-                        console.error(`[${project.name}] ... Unzip error:`, err);
-                        reject(err);
-                    });
+                    .on('finish', () => { console.log(`[${project.name}] ... Unzip successful.`); resolve(); })
+                    .on('error', (err) => { console.error(`[${project.name}] ... Unzip error:`, err); reject(err); });
             });
             await fs.remove(req.file.path);
         } else {
@@ -217,9 +241,8 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
         console.log(`[${project.name}] --> ✅ Deployment Succeeded. Status set to 'ready'.`);
 
     } catch (error) {
-        // This block will now catch errors from the async part
         console.error(`[${project ? project.name : projectId}] --> ❌ Critical deployment failure:`, error.message);
-        console.error(error.stack); // Log the full stack trace for detailed debugging
+        console.error(error.stack);
 
         if (project) {
             await project.updateOne({ status: 'failed' });
@@ -232,19 +255,12 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
 // ==      STATIC FILE & REVERSE PROXY SERVING LOGIC            ==
 // =================================================================
 
-// 1. Serve the frontend dashboard files (index.html, dashboard.html, style.css)
 app.use(express.static(path.join(__dirname, '/')));
 
-// 2. The Reverse Proxy - This MUST be the last middleware.
-// It checks the subdomain and serves the corresponding deployed project.
 app.use(async (req, res) => {
     const host = req.hostname;
     
-    // Check if the host matches the main domain from environment variables
     if (host === process.env.DOMAIN_NAME) {
-       // This is a request to our main dashboard, not a user's site.
-       // Let it fall through, express.static will handle it or it will 404.
-       // We can explicitly send index.html as a fallback.
        return res.sendFile(path.join(__dirname, 'index.html'));
     }
     
@@ -261,10 +277,7 @@ app.use(async (req, res) => {
 
         const projectPath = path.join(DEPLOYMENTS_DIR, project.id);
         
-        // Serve the static files for the found project
-        // This is a more robust way to handle nested paths like /about or /css/style.css
         express.static(projectPath)(req, res, (err) => {
-            // If the file is not found, it might be an SPA route. Serve index.html.
             res.sendFile(path.join(projectPath, 'index.html'));
         });
 
