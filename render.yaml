@@ -2,14 +2,14 @@
 # Final Blueprint using ONLY a Web Service that serves everything.
 
 services:
-  # The Backend API AND Frontend Server (Node.js/Express)
+  # This single service handles the API AND the frontend dashboard
   - type: web
-    name: your-platform # Or whatever you named your web service
+    name: webhosting- # This should match the name of your Web Service on Render
     env: node
     plan: free
     branch: main
     
-    # Build and Start Commands
+    # Build and Start Commands for the Node.js server
     buildCommand: "npm install"
     startCommand: "node server.js"
     
@@ -33,7 +33,7 @@ services:
       - key: DOMAIN_NAME
         fromService:
           type: web
-          name: your-platform # MUST match the 'name' of this service
+          name: webhosting- # MUST match the 'name' of this service
           property: host
 
 # The Database (MongoDB)
