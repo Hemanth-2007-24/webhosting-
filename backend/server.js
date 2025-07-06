@@ -1,4 +1,14 @@
-// server.js
+// =================================================================
+// ==                  WebHost Platform Server                    ==
+// =================================================================
+// This single file powers the entire backend:
+// - Express web server
+// - API for user auth and project management
+// - Mongoose for MongoDB interaction
+// - Deployment engine for Git and ZIP files
+// - Reverse proxy to serve deployed user sites on subdomains
+// =================================================================
+
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -20,8 +30,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // --- DATABASE CONNECTION ---
 mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('MongoDB Connected'))
-    .catch(err => console.error('MongoDB Connection Error:', err));
+    .then(() => console.log('✅ MongoDB Connected'))
+    .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
 // --- DATABASE MODELS ---
 const UserSchema = new mongoose.Schema({
@@ -41,19 +51,22 @@ const ProjectSchema = new mongoose.Schema({
     subdomain: { type: String, required: true, unique: true },
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     status: { type: String, enum: ['queued', 'deploying', 'ready', 'failed'], default: 'queued' },
-});
+}, { timestamps: true });
 const Project = mongoose.model('Project', ProjectSchema);
 
 // --- AUTH MIDDLEWARE ---
 const authMiddleware = (req, res, next) => {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) return res.status(401).json({ message: 'Authorization denied' });
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'Authorization denied, no token provided.' });
+    }
     try {
+        const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
         next();
     } catch (e) {
-        res.status(400).json({ message: 'Token is not valid' });
+        res.status(400).json({ message: 'Token is not valid.' });
     }
 };
 
@@ -74,7 +87,9 @@ async function findBuildDir(basePath) {
     return basePath; // Assume root if no common dir found
 }
 
-// --- API ROUTES ---
+// =================================================================
+// ==                         API ROUTES                          ==
+// =================================================================
 
 // AUTH ROUTES
 app.post('/api/auth/register', async (req, res) => {
@@ -84,13 +99,14 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(400).json({ message: 'Invalid email or password (min 6 chars).' });
         }
         if (await User.findOne({ email })) {
-            return res.status(400).json({ message: 'User already exists.' });
+            return res.status(400).json({ message: 'User with this email already exists.' });
         }
         const user = new User({ email, password });
         await user.save();
         res.status(201).json({ message: 'User registered successfully.' });
     } catch (error) {
-        res.status(500).json({ message: 'Server error' });
+        console.error("Register Error:", error);
+        res.status(500).json({ message: 'Server error during registration.' });
     }
 });
 
@@ -104,7 +120,8 @@ app.post('/api/auth/login', async (req, res) => {
         const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
         res.json({ token });
     } catch (error) {
-        res.status(500).json({ message: 'Server error' });
+        console.error("Login Error:", error);
+        res.status(500).json({ message: 'Server error during login.' });
     }
 });
 
@@ -112,14 +129,18 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/projects', authMiddleware, async (req, res) => {
     try {
         const { name } = req.body;
-        const subdomain = name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 30) + '-' + cuid.slug();
+        if (!name || name.trim().length < 3) {
+            return res.status(400).json({ message: 'Project name must be at least 3 characters.' });
+        }
+        const subdomain = name.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 20) + '-' + cuid.slug();
         if (await Project.findOne({ subdomain })) {
             return res.status(400).json({ message: 'A project with a similar name already exists.' });
         }
-        const project = new Project({ name, subdomain, owner: req.user.id });
+        const project = new Project({ name, subdomain, owner: req.user.id, status: 'queued' });
         await project.save();
         res.status(201).json(project);
     } catch (error) {
+        console.error("Create Project Error:", error);
         res.status(500).json({ message: 'Server error creating project.' });
     }
 });
@@ -129,87 +150,130 @@ app.get('/api/projects', authMiddleware, async (req, res) => {
         const projects = await Project.find({ owner: req.user.id }).sort({ createdAt: -1 });
         res.json(projects);
     } catch (error) {
+        console.error("Get Projects Error:", error);
         res.status(500).json({ message: 'Server error fetching projects.' });
     }
 });
 
-// DEPLOYMENT ROUTE
+// DEPLOYMENT ROUTE (IMPROVED WITH DETAILED LOGGING)
 app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) => {
     const { projectId, gitURL } = req.body;
-    
+    let project; // Define project here to access it in the final catch block
+
     try {
-        const project = await Project.findById(projectId);
+        project = await Project.findById(projectId);
         if (!project || project.owner.toString() !== req.user.id) {
-            return res.status(404).json({ message: 'Project not found.' });
+            return res.status(404).json({ message: 'Project not found or you are not the owner.' });
         }
 
-        await Project.updateOne({ _id: projectId }, { status: 'deploying' });
-        res.status(202).json({ message: 'Deployment accepted and is in progress.' }); // Respond immediately
+        // Immediately respond to the client and update status to 'deploying'
+        await project.updateOne({ status: 'deploying' });
+        console.log(`[${project.name}] --> Deployment started.`);
+        res.status(202).json({ message: 'Deployment accepted and is in progress.' });
 
-        // --- Asynchronous deployment process ---
+        // --- Asynchronous deployment process begins here ---
         const projectDeployPath = path.join(DEPLOYMENTS_DIR, project.id);
+        
+        console.log(`[${project.name}] STEP 1: Cleaning up old deployment at ${projectDeployPath}`);
         await fs.ensureDir(projectDeployPath);
         await fs.emptyDir(projectDeployPath);
         
         if (gitURL) { // Deploy from Git
+            console.log(`[${project.name}] STEP 2: Cloning from Git URL: ${gitURL}`);
             const tempCloneDir = path.join(__dirname, 'uploads', `_temp_git_${project.id}`);
             await fs.emptyDir(tempCloneDir);
+            
             await simpleGit().clone(gitURL, tempCloneDir, { '--depth': 1 });
+            console.log(`[${project.name}] ... Git clone successful.`);
+
             const buildDir = await findBuildDir(tempCloneDir);
+            console.log(`[${project.name}] STEP 3: Found build directory at: ${buildDir}`);
+
             await fs.copy(buildDir, projectDeployPath);
+            console.log(`[${project.name}] STEP 4: Copied files to final deployment directory.`);
+            
             await fs.remove(tempCloneDir);
+
         } else if (req.file) { // Deploy from ZIP
+            console.log(`[${project.name}] STEP 2: Unzipping file: ${req.file.path}`);
             await new Promise((resolve, reject) => {
                 fs.createReadStream(req.file.path)
                     .pipe(unzipper.Extract({ path: projectDeployPath }))
-                    .on('finish', resolve)
-                    .on('error', reject);
+                    .on('finish', () => {
+                        console.log(`[${project.name}] ... Unzip successful.`);
+                        resolve();
+                    })
+                    .on('error', (err) => {
+                        console.error(`[${project.name}] ... Unzip error:`, err);
+                        reject(err);
+                    });
             });
             await fs.remove(req.file.path);
         } else {
-             throw new Error("No Git URL or file provided.");
+             throw new Error("No Git URL or file was provided for deployment.");
         }
 
-        await Project.updateOne({ _id: projectId }, { status: 'ready' });
-        console.log(`Deployment for ${project.name} succeeded.`);
+        await project.updateOne({ status: 'ready' });
+        console.log(`[${project.name}] --> ✅ Deployment Succeeded. Status set to 'ready'.`);
 
     } catch (error) {
-        console.error(`Deployment for ${projectId} failed:`, error);
-        await Project.updateOne({ _id: projectId }, { status: 'failed' });
+        // This block will now catch errors from the async part
+        console.error(`[${project ? project.name : projectId}] --> ❌ Critical deployment failure:`, error.message);
+        console.error(error.stack); // Log the full stack trace for detailed debugging
+
+        if (project) {
+            await project.updateOne({ status: 'failed' });
+            console.log(`[${project.name}] ... Status updated to 'failed'.`);
+        }
     }
 });
 
-// --- STATIC FILE SERVING FOR FRONTEND DASHBOARD ---
-// This serves your index.html, dashboard.html, and style.css
+// =================================================================
+// ==      STATIC FILE & REVERSE PROXY SERVING LOGIC            ==
+// =================================================================
+
+// 1. Serve the frontend dashboard files (index.html, dashboard.html, style.css)
 app.use(express.static(path.join(__dirname, '/')));
 
-// --- REVERSE PROXY & DEPLOYED SITE SERVING ---
-// This MUST be the last middleware.
+// 2. The Reverse Proxy - This MUST be the last middleware.
+// It checks the subdomain and serves the corresponding deployed project.
 app.use(async (req, res) => {
     const host = req.hostname;
-    const subdomain = host.split('.')[0];
     
-    // Don't proxy the main domain, let it fall through to the static handler above
-    if (!subdomain || host === process.env.DOMAIN_NAME) {
+    // Check if the host matches the main domain from environment variables
+    if (host === process.env.DOMAIN_NAME) {
+       // This is a request to our main dashboard, not a user's site.
+       // Let it fall through, express.static will handle it or it will 404.
+       // We can explicitly send index.html as a fallback.
        return res.sendFile(path.join(__dirname, 'index.html'));
+    }
+    
+    const subdomain = host.split('.')[0];
+    if (!subdomain) {
+        return res.status(404).send('Subdomain not specified.');
     }
 
     try {
         const project = await Project.findOne({ subdomain: subdomain, status: 'ready' });
         if (!project) {
-            return res.status(404).send('<html><body><h1>404 Not Found</h1><p>Project does not exist or is not deployed.</p></body></html>');
+            return res.status(404).send(`<html><body style="font-family: sans-serif;"><h1>404 Not Found</h1><p>The site <strong>${host}</strong> does not exist or has not been deployed successfully.</p></body></html>`);
         }
 
         const projectPath = path.join(DEPLOYMENTS_DIR, project.id);
-        // Serve index.html for root requests to the subdomain, otherwise serve the specific file
-        const requestedFile = req.path === '/' ? 'index.html' : req.path;
-        res.sendFile(path.join(projectPath, requestedFile));
+        
+        // Serve the static files for the found project
+        // This is a more robust way to handle nested paths like /about or /css/style.css
+        express.static(projectPath)(req, res, (err) => {
+            // If the file is not found, it might be an SPA route. Serve index.html.
+            res.sendFile(path.join(projectPath, 'index.html'));
+        });
 
     } catch (error) {
+        console.error("Reverse Proxy Error:", error);
         res.status(500).send('Server error.');
     }
 });
 
 // --- SERVER START ---
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
