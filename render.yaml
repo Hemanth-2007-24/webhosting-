@@ -1,32 +1,37 @@
 # render.yaml
-# Blueprint for deploying the hosting platform on Render.com
+# Corrected Blueprint for a flat project structure.
 services:
   # The Backend API (Node.js/Express)
   - type: web
-    name: your-platform # CHANGE THIS to a unique name for your backend
+    name: your-platform # Make sure this name is the same as before
     env: node
     plan: free
-    # Make sure your main branch is called 'main' or 'master'
     branch: main
+    
+    # This line is REMOVED because package.json is in the root
+    # rootDir: backend  <-- DELETE THIS LINE
+
     # Build and Start Commands
-    buildCommand: npm install
-    startCommand: node server.js
+    buildCommand: "npm install"
+    startCommand: "node server.js"
+    
     # Disk for storing deployed websites
     disks:
       - name: deployments
         mountPath: /opt/render/project/src/deployments
-        sizeGB: 1 # 1GB is the smallest size
+        sizeGB: 1
       - name: uploads
         mountPath: /opt/render/project/src/uploads
         sizeGB: 1
+        
     # Environment Variables
     envVars:
       - key: MONGO_URI
         fromDatabase:
-          name: platform-db # Matches the database name below
+          name: platform-db
           property: connectionString
       - key: JWT_SECRET
-        generateValue: true # Let Render create a secure secret
+        generateValue: true
       - key: DOMAIN_NAME
         value: your-platform.onrender.com # IMPORTANT: This MUST match your service name + .onrender.com
 
