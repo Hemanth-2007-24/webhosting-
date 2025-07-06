@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebHost - Deploy Your Sites with Ease</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="top-navbar">
+        <a href="/" class="logo">WebHost</a>
+        <div id="header-controls" class="header-controls">
+            <!-- Buttons will be injected here by JS -->
+        </div>
+    </header>
+
+    <main class="page-container">
+        <!-- Logged-OUT View -->
+        <div id="logged-out-view">
+            <section class="section text-center">
+                <h1>Deploy Static Sites in Seconds</h1>
+                <p class="subtitle">
+                    Connect your GitHub repo or upload a zip file. We handle the rest. Simple, fast, and free hosting for your projects.
+                </p>
+                <a href="#auth-section" class="btn btn-primary btn-large">Get Started for Free</a>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">Why <span>WebHost</span>?</h2>
+                <div class="features-grid">
+                    <div class="card feature-card">
+                        <div class="icon"><i class="fab fa-github"></i></div>
+                        <h3>GitHub Integration</h3>
+                        <p>Deploy directly from public GitHub repositories. Your site is live in moments.</p>
+                    </div>
+                    <div class="card feature-card">
+                        <div class="icon"><i class="fas fa-file-zipper"></i></div>
+                        <h3>Manual Upload</h3>
+                        <p>No Git? No problem. Just drag and drop a .zip file of your static site.</p>
+                    </div>
+                    <div class="card feature-card">
+                        <div class="icon"><i class="fas fa-link"></i></div>
+                        <h3>Free Subdomains</h3>
+                        <p>Get a clean, shareable URL for every project: <strong>your-site.webhost.app</strong></p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="auth-section" class="section">
+                <div class="card auth-box">
+                    <div class="auth-tabs">
+                        <div class="auth-tab active" data-tab="login">Login</div>
+                        <div class="auth-tab" data-tab="register">Register</div>
+                    </div>
+
+                    <!-- Login Form -->
+                    <form id="login-form" class="auth-form active">
+                        <input type="email" id="login-email" class="form-input" placeholder="Email Address" required>
+                        <input type="password" id="login-password" class="form-input" placeholder="Password" required>
+                        <button type="submit" class="btn btn-primary full-width">Login</button>
+                    </form>
+
+                    <!-- Register Form -->
+                    <form id="register-form" class="auth-form">
+                        <input type="email" id="register-email" class="form-input" placeholder="Email Address" required>
+                        <input type="password" id="register-password" class="form-input" placeholder="Password (min 6 chars)" required minlength="6">
+                        <button type="submit" class="btn btn-primary full-width">Create Account</button>
+                    </form>
+                </div>
+            </section>
+        </div>
+
+        <!-- Logged-IN View -->
+        <div id="logged-in-view" class="hidden text-center">
+             <h1 class="section-title">Welcome back!</h1>
+             <p class="subtitle">You are logged in. Manage your sites from your personal dashboard.</p>
+             <a href="dashboard.html" class="btn btn-primary btn-large">Go to Dashboard</a>
+        </div>
+    </main>
+    <div id="toast-notification"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- CONFIGURATION ---
+    const API_BASE_URL = ''; // Leave empty for production, it will use relative paths
+
+    // --- DOM ELEMENTS ---
+    const headerControls = document.getElementById('header-controls');
+    const loggedOutView = document.getElementById('logged-out-view');
+    const loggedInView = document.getElementById('logged-in-view');
+    const toast = document.getElementById('toast-notification');
+
+    // --- CHECK FOR LOGGED IN USER ---
+    const token = localStorage.getItem('token');
+
+    // --- UI STATE MANAGEMENT ---
+    const updateUI = () => {
+        if (localStorage.getItem('token')) {
+            // Logged-in state
+            loggedOutView.classList.add('hidden');
+            loggedInView.classList.remove('hidden');
+            headerControls.innerHTML = `
+                <a href="dashboard.html" class="btn">Dashboard</a>
+                <button id="logout-btn" class="btn btn-danger">Logout</button>
+            `;
+            document.getElementById('logout-btn').addEventListener('click', handleLogout);
+        } else {
+            // Logged-out state
+            loggedOutView.classList.remove('hidden');
+            loggedInView.classList.add('hidden');
+            headerControls.innerHTML = `<a href="#auth-section" class="btn">Login / Register</a>`;
+            initializeAuthForms();
+        }
+    };
+
+    // --- EVENT HANDLERS & LOGIC ---
+    function initializeAuthForms() {
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const tabs = document.querySelectorAll('.auth-tab');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
+                document.getElementById(`${tab.dataset.tab}-form`).classList.add('active');
+            });
+        });
+
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>';
+            
+            try {
+                const email = document.getElementById('register-email').value;
+                const password = document.getElementById('register-password').value;
+
+                const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.message);
+                
+                showToast('Registration successful! Please log in.', 'success');
+                document.querySelector('.auth-tab[data-tab="login"]').click();
+                document.getElementById('login-email').value = email;
+                document.getElementById('login-password').focus();
+
+            } catch (error) {
+                showToast(error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>';
+            
+            try {
+                const email = document.getElementById('login-email').value;
+                const password = document.getElementById('login-password').value;
+                
+                const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password }),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.message);
+
+                localStorage.setItem('token', data.token);
+                showToast('Login successful!', 'success');
+                setTimeout(updateUI, 500);
+
+            } catch (error) {
+                showToast(error.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+    }
+
+    function handleLogout() {
+        localStorage.removeItem('token');
+        showToast('You have been logged out.', 'success');
+        setTimeout(() => {
+            updateUI();
+        }, 500);
+    }
+
+    function showToast(message, type = 'success') {
+        if (!toast) return;
+        toast.textContent = message;
+        toast.className = `toast-notification ${type} show`;
+        setTimeout(() => { toast.classList.remove('show'); }, 4000);
+    }
+
+    // --- INITIALIZE THE PAGE ---
+    updateUI();
+});
+</script>
+</body>
+</html>
