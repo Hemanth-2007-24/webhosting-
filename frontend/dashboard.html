@@ -94,7 +94,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- CONFIGURATION ---
     const API_BASE_URL = ''; // Leave empty for production
     const token = localStorage.getItem('token');
-    const DOMAIN_NAME = "your-platform.onrender.com"; // CHANGE THIS to your backend's domain on Render
+    // IMPORTANT: Make sure this is your actual Render service domain!
+    const DOMAIN_NAME = "webhosting-1.onrender.com"; 
 
     // --- DOM ELEMENTS ---
     const projectsList = document.getElementById('projects-list');
@@ -114,6 +115,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (res.status === 401) { // Unauthorized
             localStorage.removeItem('token');
             window.location.replace('/index.html');
+            throw new Error('Session expired. Please log in again.');
+        }
+        // Handle no-content responses for DELETE requests
+        if (res.status === 204) {
             return;
         }
         const data = await res.json();
@@ -135,15 +140,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 projects.forEach(project => {
                     const projectCard = document.createElement('div');
                     projectCard.className = 'card project-card';
+                    projectCard.setAttribute('id', `project-card-${project._id}`);
                     projectCard.innerHTML = `
                         <h3>${project.name}</h3>
-                        <a href="http://${project.subdomain}.${DOMAIN_NAME}" target="_blank" class="project-url">
+                        <a href="http://${project.subdomain}.${DOMAIN_NAME}" target="_blank" rel="noopener noreferrer" class="project-url">
                             ${project.subdomain}.${DOMAIN_NAME} <i class="fas fa-external-link-alt"></i>
                         </a>
                         <div class="project-status">
                             Status: <span class="status-badge ${project.status}">${project.status}</span>
                         </div>
                         <div class="project-actions">
+                            <button class="btn btn-danger delete-btn" data-id="${project._id}" data-name="${project.name}">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
                             <button class="btn btn-success deploy-btn" data-id="${project._id}" data-name="${project.name}">
                                 <i class="fas fa-rocket"></i> Deploy
                             </button>
@@ -200,16 +209,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // --- DEPLOYMENT LOGIC ---
-    // Open deploy modal
-    projectsList.addEventListener('click', (e) => {
+    // --- DELEGATED EVENT LISTENER FOR DEPLOY & DELETE ---
+    projectsList.addEventListener('click', async (e) => {
         const deployBtn = e.target.closest('.deploy-btn');
+        const deleteBtn = e.target.closest('.delete-btn');
+
+        // Handle Deploy
         if (deployBtn) {
             const projectId = deployBtn.dataset.id;
             const projectName = deployBtn.dataset.name;
             document.getElementById('deploy-project-name').textContent = projectName;
             document.getElementById('deploy-project-id').value = projectId;
             showModal(deployModal);
+        }
+
+        // Handle Delete
+        if (deleteBtn) {
+            const projectId = deleteBtn.dataset.id;
+            const projectName = deleteBtn.dataset.name;
+
+            if (confirm(`Are you sure you want to permanently delete the project "${projectName}"? This will also delete its deployed files and cannot be undone.`)) {
+                try {
+                    await apiFetch(`/projects/${projectId}`, { method: 'DELETE' });
+                    showToast('Project deleted successfully.', 'success');
+                    document.getElementById(`project-card-${projectId}`).remove();
+                } catch (error) {
+                    showToast(`Failed to delete project: ${error.message}`, 'error');
+                }
+            }
         }
     });
 
@@ -253,7 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             showToast('Deployment started! Your site will be live in a few moments.', 'success');
             hideModals();
-            setTimeout(fetchAndRenderProjects, 2000); // Refresh list after a short delay
+            setTimeout(fetchAndRenderProjects, 3000); // Refresh list after a delay
         } catch (error) {
              showToast(error.message, 'error');
         } finally {
