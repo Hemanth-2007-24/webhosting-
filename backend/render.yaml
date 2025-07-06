@@ -1,5 +1,5 @@
 # render.yaml
-# Final Blueprint using a single Web Service running from the root.
+# The correct configuration with persistent disks for uploads and deployments.
 
 services:
   # The Backend API AND Frontend Server (Node.js/Express)
@@ -9,13 +9,13 @@ services:
     plan: free
     branch: main
     
-    # NO rootDir here. The commands run from the project root.
-    
     # Build and Start Commands
     buildCommand: "npm install"
     startCommand: "node server.js"
     
-    # Disk for storing deployed websites
+    # === PERSISTENT DISKS (CRITICAL FOR FILE UPLOADS) ===
+    # This tells Render to create permanent storage and attach it to these paths.
+    # The data in these folders will survive restarts and deploys.
     disks:
       - name: deployments
         mountPath: /opt/render/project/src/deployments
@@ -31,7 +31,7 @@ services:
           name: platform-db # Must match the database name below
           property: connectionString
       - key: JWT_SECRET
-        generateValue: true
+        generateValue: true # Let Render create a secure secret
       - key: DOMAIN_NAME
         fromService:
           type: web
