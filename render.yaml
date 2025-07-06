@@ -1,16 +1,14 @@
 # render.yaml
-# Corrected Blueprint for a flat project structure.
+# Final Blueprint using ONLY a Web Service that serves everything.
+
 services:
-  # The Backend API (Node.js/Express)
+  # The Backend API AND Frontend Server (Node.js/Express)
   - type: web
-    name: your-platform # Make sure this name is the same as before
+    name: your-platform # Or whatever you named your web service
     env: node
     plan: free
     branch: main
     
-    # This line is REMOVED because package.json is in the root
-    # rootDir: backend  <-- DELETE THIS LINE
-
     # Build and Start Commands
     buildCommand: "npm install"
     startCommand: "node server.js"
@@ -28,12 +26,15 @@ services:
     envVars:
       - key: MONGO_URI
         fromDatabase:
-          name: platform-db
+          name: platform-db # Must match the database name below
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
       - key: DOMAIN_NAME
-        value: your-platform.onrender.com # IMPORTANT: This MUST match your service name + .onrender.com
+        fromService:
+          type: web
+          name: your-platform # MUST match the 'name' of this service
+          property: host
 
 # The Database (MongoDB)
 databases:
