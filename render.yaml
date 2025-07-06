@@ -1,15 +1,17 @@
 # render.yaml
-# Final Blueprint using ONLY a Web Service that serves everything.
+# Final Blueprint using a single Web Service running from the root.
 
 services:
-  # This single service handles the API AND the frontend dashboard
+  # The Backend API AND Frontend Server (Node.js/Express)
   - type: web
-    name: webhosting- # This should match the name of your Web Service on Render
+    name: webhosting- # Or whatever you named your web service
     env: node
     plan: free
     branch: main
     
-    # Build and Start Commands for the Node.js server
+    # NO rootDir here. The commands run from the project root.
+    
+    # Build and Start Commands
     buildCommand: "npm install"
     startCommand: "node server.js"
     
