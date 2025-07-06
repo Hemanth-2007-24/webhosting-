@@ -1,0 +1,24 @@
+{
+  "name": "webhost-platform",
+  "version": "1.0.0",
+  "description": "A simple website hosting platform.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "cuid": "^3.0.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "fs-extra": "^11.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^7.5.2",
+    "multer": "^1.4.5-lts.1",
+    "simple-git": "^3.19.1",
+    "unzipper": "^0.10.14"
+  }
+}
