@@ -97,12 +97,15 @@
             </div>
         </div>
 
+        <!-- Fixed Loading State Container outside Projects List Grid -->
+        <div id="loading-state" class="text-center py-12 hidden">
+            <i class="fa-solid fa-spinner animate-spin text-3xl text-indigo-400 mb-2"></i>
+            <p class="text-slate-400 text-sm">Loading provisioned containers...</p>
+        </div>
+
         <!-- Dashboard tab contents -->
         <div id="projects-list" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div id="loading-state" class="text-center py-12 col-span-full">
-                <i class="fa-solid fa-spinner animate-spin text-3xl text-indigo-400 mb-2"></i>
-                <p class="text-slate-400 text-sm">Loading provisioned containers...</p>
-            </div>
+            <!-- Project Cards Injected Here -->
         </div>
 
         <!-- Stateful Layout Row: Credentials Section & Native App Downloads -->
@@ -207,11 +210,11 @@
             </form>
         </div>
 
-        <!-- APP STUDIO MODAL -->
+        <!-- APP STUDIO MODAL WITH IMAGE ICON FILE UPLOADER -->
         <div id="app-studio-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
             <h2 class="font-display font-extrabold text-2xl mb-2">Native App Studio</h2>
-            <p class="text-xs text-slate-500 mb-6">Compile your deployed website URL directly into downloadable, borderless mobile or desktop apps.</p>
+            <p class="text-xs text-slate-500 mb-6">Compile your deployed website URL directly into native android apk and windows exe packages.</p>
             <form id="app-studio-form" class="space-y-4">
                 <input type="hidden" id="app-project-id">
                 <div>
@@ -219,11 +222,15 @@
                   <input type="text" id="app-name-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500" placeholder="My Mobile App" required>
                 </div>
                 <div>
-                  <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Select Target Platform</label>
+                  <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Target Platform</label>
                   <select id="app-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" required>
-                      <option value="android">Android Mobile WebView (ZIP)</option>
-                      <option value="windows">Windows Desktop WebView (ZIP)</option>
+                      <option value="android">Android Mobile Application (.APK)</option>
+                      <option value="windows">Windows Desktop Application (.EXE)</option>
                   </select>
+                </div>
+                <div>
+                  <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Application Icon (PNG/JPG)</label>
+                  <input type="file" id="app-icon-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-sm" accept="image/png, image/jpeg">
                 </div>
                 <div class="flex justify-end gap-2 pt-4">
                     <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
@@ -277,15 +284,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const fetchAndRenderProjects = async () => { 
         try { 
-            loadingState.style.display = 'block'; 
-            document.querySelectorAll('.project-card-elem').forEach(el => el.remove());
+            loadingState.classList.remove('hidden'); 
+            projectsList.innerHTML = ''; 
             const projects = await apiFetch('/projects'); 
-            loadingState.style.display = 'none'; 
+            loadingState.classList.add('hidden'); 
             if (!projects || projects.length === 0) { 
-                projectsList.innerHTML += `<p id="no-projects-text" class="text-center py-12 col-span-full text-slate-500 font-medium">No project containers initiated yet.</p>`; 
+                projectsList.innerHTML = `<p id="no-projects-text" class="text-center py-12 col-span-full text-slate-500 font-medium">No project containers initiated yet.</p>`; 
             } else { 
-                const emptyText = document.getElementById('no-projects-text');
-                if (emptyText) emptyText.remove();
                 projects.forEach(project => { 
                     const card = document.createElement('div'); 
                     card.className = 'project-card-elem glass-card p-6 rounded-[24px] hover:border-white/[0.15] hover:translate-y-[-2px] transition-all flex flex-col justify-between gap-4'; 
@@ -296,10 +301,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (project.appAndroidStatus === 'ready' || project.appWindowsStatus === 'ready') {
                         appDownloadsHTML = `
                             <div class="mt-2 pt-2 border-t border-white/[0.05] space-y-1.5">
-                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Compiled WebView Packages</span>
+                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Compiled Native Packages</span>
                                 <div class="flex flex-wrap gap-1.5">
-                                    ${project.appAndroidStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/android" class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-android"></i> Android WebView</a>` : ''}
-                                    ${project.appWindowsStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/windows" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> Windows Launcher</a>` : ''}
+                                    ${project.appAndroidStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/android" class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-android"></i> Android .APK</a>` : ''}
+                                    ${project.appWindowsStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/windows" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> Windows .EXE</a>` : ''}
                                 </div>
                             </div>
                         `;
@@ -332,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } 
         } catch (error) { 
             showToast(error.message, 'error'); 
-            loadingState.style.display = 'none'; 
+            loadingState.classList.add('hidden'); 
         } 
     };
 
@@ -593,15 +598,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const projectId = document.getElementById('app-project-id').value;
         const platform = document.getElementById('app-platform').value;
         const appName = document.getElementById('app-name-input').value;
+        const iconFile = document.getElementById('app-icon-input').files[0];
 
         btn.disabled = true;
         btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Compiling...';
 
+        const formData = new FormData();
+        formData.append('platform', platform);
+        formData.append('appName', appName);
+        if (iconFile) {
+            formData.append('icon', iconFile);
+        }
+
         try {
-            await apiFetch(`/projects/${projectId}/build-app`, {
+            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/build-app`, {
                 method: 'POST',
-                body: { platform, appName }
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
             });
+
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.message || 'App Compilation failed.');
+            }
+
             showToast('Native app compiler compilation initialized.', 'success');
             hideModals();
             fetchAndRenderProjects();

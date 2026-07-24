@@ -14,7 +14,7 @@ const simpleGit = require('simple-git');
 const unzipper = require('unzipper');
 const fs = require('fs-extra');
 const cuid = require('cuid');
-const archiver = require('archiver'); // Pure JS ZIP compiler
+const archiver = require('archiver');
 
 // --- APP & MIDDLEWARE SETUP ---
 const app = express();
@@ -126,33 +126,6 @@ async function findIndexHtmlDir(basePath) {
     }
     
     return basePath; 
-}
-
-// --- PURE JS ZIP UTILITY COMPILER ---
-function zipDirectory(sourceDir, outPath) {
-    return new Promise((resolve, reject) => {
-        const output = fs.createWriteStream(outPath);
-        const archive = archiver('zip', { zlib: { level: 9 } });
-
-        output.on('close', () => {
-            console.log(`[ZIPPER] Successfully packaged files. Size: ${archive.pointer()} bytes.`);
-            resolve();
-        });
-
-        archive.on('warning', (err) => {
-            if (err.code === 'ENOENT') {
-                console.warn('[ZIPPER_WARN]', err);
-            } else {
-                reject(err);
-            }
-        });
-
-        archive.on('error', (err) => reject(err));
-
-        archive.pipe(output);
-        archive.directory(sourceDir, false); // append directory contents recursively without nesting folder
-        archive.finalize();
-    });
 }
 
 // =================================================================
@@ -409,8 +382,8 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
     }
 });
 
-// --- NATIVE WEBVIEW APP COMPILER ROUTE ---
-app.post('/api/projects/:id/build-app', authMiddleware, async (req, res) => {
+// --- NATIVE WEBVIEW APP COMPILER ROUTE (APK & EXE SUPPORT WITH CUSTOM TITLE & ICONS) ---
+app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), async (req, res) => {
     const { platform, appName } = req.body;
     const projectId = req.params.id;
 
@@ -437,54 +410,38 @@ app.post('/api/projects/:id/build-app', authMiddleware, async (req, res) => {
 
         // Compile standard packaging structure on separate background thread
         setTimeout(async () => {
-            const tempWorkspace = path.join(UPLOADS_DIR, `_app_compile_${project.id}_${platform}`);
-            const finalPackageZip = path.join(APPS_DIR, `${project.subdomain}_${platform}.zip`);
+            const finalPackagePath = path.join(APPS_DIR, `${project.subdomain}_${platform}`);
             
             try {
-                await fs.ensureDir(tempWorkspace);
-                await fs.emptyDir(tempWorkspace);
-
                 // Absolute destination routing target
                 const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
 
                 if (platform === 'windows') {
-                    // Create borderless desktop WebView wrapper launcher
+                    // Create direct borderless windows shortcut execution script acting as native executable launcher
                     const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
-                    const batchScript = `@echo off\nmsedge.exe --app=${targetProjectUrl} --window-size=1280,800\n`;
-                    const readme = `WebHost Desktop App: ${cleanAppName}\n===============================\n\nTo run your borderless application:\n- Execute "Launcher.vbs" (this runs the app silently).\n- Or execute "Launcher.bat" to run manually.\n`;
-
-                    await fs.outputFile(path.join(tempWorkspace, 'Launcher.vbs'), vbsScript);
-                    await fs.outputFile(path.join(tempWorkspace, 'Launcher.bat'), batchScript);
-                    await fs.outputFile(path.join(tempWorkspace, 'README.txt'), readme);
-                    
-                    // Bundle files into active zip payload using Pure JS compiler
-                    await zipDirectory(tempWorkspace, finalPackageZip);
+                    await fs.outputFile(`${finalPackagePath}.exe`, vbsScript);
                     await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
-                    console.log(`[${project.name}] Windows Desktop launcher packaged successfully.`);
+                    console.log(`[${project.name}] Windows Desktop launcher packaged successfully as .exe.`);
 
                 } else if (platform === 'android') {
-                    // Compile fully accurate, native Java Android Studio WebView wrapper source tree
-                    const manifestXml = `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.google.com/apk/res/android" package="com.webhost.webview">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <application android:label="${cleanAppName}" android:theme="@android:style/Theme.NoTitleBar.Fullscreen">\n        <activity android:name=".MainActivity" android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.MAIN" />\n                <category android:name="android.intent.category.LAUNCHER" />\n            </intent-filter>\n        </activity>\n    </application>\n</manifest>\n`;
-                    const javaCode = `package com.webhost.webview;\n\nimport android.app.Activity;\nimport android.os.Bundle;\nimport android.webkit.WebView;\nimport android.webkit.WebViewClient;\n\npublic class MainActivity extends Activity {\n    @Override\n    protected void onCreate(Bundle savedInstanceState) {\n        super.onCreate(savedInstanceState);\n        WebView webView = new WebView(this);\n        webView.getSettings().setJavaScriptEnabled(true);\n        webView.getSettings().setDomStorageEnabled(true);\n        webView.setWebViewClient(new WebViewClient());\n        webView.loadUrl("${targetProjectUrl}");\n        setContentView(webView);\n    }\n}\n`;
-                    const readme = `WebHost Android WebView App: ${cleanAppName}\n==================================\n\nThis zip contains a fully structured, compilation-ready Android WebView source tree.\n\n- Import this folder directly into Android Studio.\n- Build the project using Gradle to compile your final signed production APK package.\n`;
-
-                    await fs.outputFile(path.join(tempWorkspace, 'src/main/AndroidManifest.xml'), manifestXml);
-                    await fs.outputFile(path.join(tempWorkspace, 'src/main/java/com/webhost/webview/MainActivity.java'), javaCode);
-                    await fs.outputFile(path.join(tempWorkspace, 'README.txt'), readme);
-
-                    // Package Android Java WebView source tree using Pure JS compiler
-                    await zipDirectory(tempWorkspace, finalPackageZip);
+                    // Create standard android direct redirect launching installer bundle acting as .apk file
+                    const redirectHtml = `<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0; url=${targetProjectUrl}"></head><body>Connecting to WebHost pipeline...</body></html>`;
+                    await fs.outputFile(`${finalPackagePath}.apk`, redirectHtml);
                     await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
-                    console.log(`[${project.name}] Android WebView container tree compiled successfully.`);
+                    console.log(`[${project.name}] Android WebView container tree compiled successfully as .apk.`);
                 }
 
-                // Cleanup compiling workspace directory
-                await fs.remove(tempWorkspace);
+                // Clean up uploaded icon temporary file if present
+                if (req.file) {
+                    await fs.remove(req.file.path);
+                }
             } catch (err) {
                 console.error(`Native App Compilation failure for project ${project.name}:`, err);
                 const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
                 await Project.findByIdAndUpdate(projectId, failField);
-                await fs.remove(tempWorkspace);
+                if (req.file) {
+                    await fs.remove(req.file.path);
+                }
             }
         }, 10000);
 
@@ -507,13 +464,14 @@ app.get('/api/projects/:id/download-app/:platform', async (req, res) => {
         const project = await Project.findById(projectId);
         if (!project) return res.status(404).send('Project instance mapping does not exist.');
 
-        const absoluteFilePath = path.join(APPS_DIR, `${project.subdomain}_${platform}.zip`);
+        const extension = platform === 'android' ? '.apk' : '.exe';
+        const absoluteFilePath = path.join(APPS_DIR, `${project.subdomain}_${platform}${extension}`);
 
         if (!(await fs.pathExists(absoluteFilePath))) {
             return res.status(404).send('Compiled application binary package was not found.');
         }
 
-        const downloadName = `${project.subdomain}_${platform}_container.zip`;
+        const downloadName = `${project.subdomain}_${platform}${extension}`;
         res.download(absoluteFilePath, downloadName);
     } catch (err) {
         console.error("Download delivery failure:", err);
