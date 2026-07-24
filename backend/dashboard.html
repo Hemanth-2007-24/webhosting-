@@ -105,21 +105,9 @@
             </div>
         </div>
 
-        <!-- GitHub Integration and Token Configuration Card -->
-        <div class="glass-card p-8 rounded-[24px] max-w-2xl">
-            <div class="space-y-4">
-                <div class="flex items-center gap-3">
-                    <div class="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400"><i class="fa-solid fa-key"></i></div>
-                    <div>
-                        <h3 class="font-display font-bold text-lg text-white">Secure Git Repository Credentials</h3>
-                        <p class="text-xs text-slate-500">Provide an authentication token to sync and clone private project workspaces.</p>
-                    </div>
-                </div>
-                <div class="flex flex-col sm:flex-row gap-3">
-                    <input type="password" id="github-pat" class="flex-1 p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white font-mono text-sm focus:outline-none focus:border-indigo-500" placeholder="ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX">
-                    <button id="save-pat-btn" class="px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all uppercase text-xs tracking-wider">Save Token</button>
-                </div>
-            </div>
+        <!-- Stateful GitHub Integration Section -->
+        <div id="pat-config-section" class="max-w-2xl">
+            <!-- Rendered dynamically by script depending on whether token is stored -->
         </div>
     </main>
 
@@ -204,6 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingState = document.getElementById('loading-state');
     const backdrop = document.getElementById('modal-backdrop');
     const toast = document.getElementById('toast-notification');
+    const patSection = document.getElementById('pat-config-section');
     
     let hasSavedPat = false;
 
@@ -230,7 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const projects = await apiFetch('/projects'); 
             loadingState.style.display = 'none'; 
             if (!projects || projects.length === 0) { 
-                projectsList.innerHTML += `<p id="no-projects-text" class="text-center py-12 col-span-full text-slate-500">No project containers initiated yet.</p>`; 
+                projectsList.innerHTML += `<p id="no-projects-text" class="text-center py-12 col-span-full text-slate-500 font-medium">No project containers initiated yet.</p>`; 
             } else { 
                 const emptyText = document.getElementById('no-projects-text');
                 if (emptyText) emptyText.remove();
@@ -265,15 +254,79 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const data = await apiFetch('/user/pat');
             if (data && data.pat) {
-                document.getElementById('github-pat').value = data.pat;
                 hasSavedPat = true;
+                renderConnectedBadge();
                 document.getElementById('toggle-select-btn').classList.remove('hidden');
             } else {
                 hasSavedPat = false;
+                renderPatInput();
                 document.getElementById('toggle-select-btn').classList.add('hidden');
             }
         } catch (error) {
             console.error(error);
+        }
+    };
+
+    const renderConnectedBadge = () => {
+        patSection.innerHTML = `
+            <div class="glass-card p-6 rounded-[24px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-emerald-500/10">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                        <i class="fa-brands fa-github text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-display font-bold text-base text-white flex items-center gap-2">
+                            GitHub Pipeline Connected 
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        </h3>
+                        <p class="text-xs text-slate-400">Your secure access token is configured. Private repository listings are operational.</p>
+                    </div>
+                </div>
+                <button id="edit-pat-btn" class="px-4 py-2 bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] rounded-xl text-xs font-bold transition-all">Update Token</button>
+            </div>
+        `;
+        document.getElementById('edit-pat-btn').addEventListener('click', renderPatInput);
+    };
+
+    const renderPatInput = () => {
+        patSection.innerHTML = `
+            <div class="glass-card p-6 rounded-[24px] space-y-4">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                        <i class="fa-solid fa-key"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-display font-bold text-lg text-white">Secure Git Repository Credentials</h3>
+                        <p class="text-xs text-slate-500">Provide an authentication token to sync and clone private project workspaces.</p>
+                    </div>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <input type="password" id="github-pat" class="flex-1 p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white font-mono text-sm focus:outline-none focus:border-indigo-500" placeholder="ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX">
+                    <button id="save-pat-btn" class="px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all uppercase text-xs tracking-wider">Save Token</button>
+                </div>
+            </div>
+        `;
+        document.getElementById('save-pat-btn').addEventListener('click', handleSavePatClick);
+    };
+
+    const handleSavePatClick = async () => {
+        const btn = document.getElementById('save-pat-btn');
+        const pat = document.getElementById('github-pat').value;
+        btn.disabled = true;
+        btn.innerHTML = 'Saving...';
+        try {
+            await apiFetch('/user/pat', {
+                method: 'POST',
+                body: { pat },
+            });
+            showToast('Credential secure status: Saved', 'success');
+            await loadSavedPat();
+            if (hasSavedPat) loadUserRepos();
+        } catch (error) {
+            showToast(error.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Save Token';
         }
     };
 
@@ -391,27 +444,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('toggle-select-btn').addEventListener('click', () => {
         document.getElementById('git-url').value = '';
         loadUserRepos();
-    });
-
-    document.getElementById('save-pat-btn').addEventListener('click', async () => {
-        const btn = document.getElementById('save-pat-btn');
-        const pat = document.getElementById('github-pat').value;
-        btn.disabled = true;
-        btn.innerHTML = 'Saving...';
-        try {
-            await apiFetch('/user/pat', {
-                method: 'POST',
-                body: { pat },
-            });
-            showToast('Credential secure status: Saved', 'success');
-            await loadSavedPat();
-            if (hasSavedPat) loadUserRepos();
-        } catch (error) {
-            showToast(error.message, 'error');
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = 'Save Token';
-        }
     });
 
     document.getElementById('deploy-form').addEventListener('submit', async (e) => { 

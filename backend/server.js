@@ -182,6 +182,7 @@ app.post('/api/user/pat', authMiddleware, async (req, res) => {
     }
 });
 
+// FETCH GITHUB REPOSITORIES FOR THE USER
 app.get('/api/user/repos', authMiddleware, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
@@ -191,7 +192,7 @@ app.get('/api/user/repos', authMiddleware, async (req, res) => {
         
         const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
             headers: {
-                'Authorization': `Bearer ${user.githubPat}`,
+                'Authorization': `token ${user.githubPat}`,
                 'User-Agent': 'WebHost-Platform'
             }
         });
@@ -202,6 +203,11 @@ app.get('/api/user/repos', authMiddleware, async (req, res) => {
         }
 
         const repos = await response.json();
+        
+        if (!Array.isArray(repos)) {
+            return res.status(400).json({ message: repos.message || 'Unable to load repositories. Verify PAT scope details.' });
+        }
+
         const simplifiedRepos = repos.map(repo => ({
             name: repo.full_name,
             clone_url: repo.clone_url,
@@ -327,20 +333,37 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
             console.log(`[${project.name}] STEP 4: Copied files to final deployment directory.`); 
             await fs.remove(tempCloneDir); 
         } else if (req.file) { 
-            console.log(`[${project.name}] STEP 2: Unzipping file: ${req.file.path}`); 
-            await new Promise((resolve, reject) => { 
-                fs.createReadStream(req.file.path) 
-                    .pipe(unzipper.Extract({ path: projectDeployPath })) 
-                    .on('finish', () => { 
-                        console.log(`[${project.name}] ... Unzip successful.`); 
-                        resolve(); 
-                    }) 
-                    .on('error', (err) => { 
-                        console.error(`[${project.name}] ... Unzip error:`, err); 
-                        reject(err); 
-                    }); 
-            }); 
+            console.log(`[${project.name}] STEP 2: Preparing extraction workspace.`); 
+            const tempExtractDir = path.join(UPLOADS_DIR, `_temp_zip_${project.id}`); 
+            await fs.ensureDir(tempExtractDir); 
+            await fs.emptyDir(tempExtractDir); 
+
+            // Extract file using standard promise open file methods
+            console.log(`[${project.name}] ... Extracting zip archive.`); 
+            const zipArchive = await unzipper.Open.file(req.file.path);
+            await zipArchive.extract({ path: tempExtractDir });
+            console.log(`[${project.name}] ... Unzip successful.`); 
             await fs.remove(req.file.path); 
+
+            // Resolve target directory path
+            let startPath = tempExtractDir;
+            if (normalizedRootDir) {
+                const resolvedPath = path.resolve(tempExtractDir, normalizedRootDir);
+                if (!resolvedPath.startsWith(tempExtractDir)) {
+                    throw new Error("Security Violation: Target path escapes deployment directory.");
+                }
+                startPath = resolvedPath;
+                if (!(await fs.pathExists(startPath))) {
+                    throw new Error(`The configured root directory '${normalizedRootDir}' does not exist inside the archive.`);
+                }
+            }
+
+            // Run Smart Index Finder on Zip exactly like Git workflow
+            const sourceDir = await findIndexHtmlDir(startPath);
+            console.log(`[${project.name}] STEP 3: Deploying from directory containing index.html: ${sourceDir}`); 
+            await fs.copy(sourceDir, projectDeployPath); 
+            console.log(`[${project.name}] STEP 4: Copied files to final deployment directory.`); 
+            await fs.remove(tempExtractDir); 
         } else { 
             throw new Error("No Git URL or file was provided for deployment."); 
         } 
