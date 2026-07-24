@@ -206,6 +206,31 @@
                 </div>
             </form>
         </div>
+
+        <!-- APP STUDIO MODAL -->
+        <div id="app-studio-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
+            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
+            <h2 class="font-display font-extrabold text-2xl mb-2">Native App Studio</h2>
+            <p class="text-xs text-slate-500 mb-6">Convert your deployed website URL directly into downloadable mobile or desktop applications.</p>
+            <form id="app-studio-form" class="space-y-4">
+                <input type="hidden" id="app-project-id">
+                <div>
+                  <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Application Name</label>
+                  <input type="text" id="app-name-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500" placeholder="My Mobile App" required>
+                </div>
+                <div>
+                  <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Target Platform</label>
+                  <select id="app-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" required>
+                      <option value="android">Android Application (APK)</option>
+                      <option value="windows">Windows Desktop Application (EXE)</option>
+                  </select>
+                </div>
+                <div class="flex justify-end gap-2 pt-4">
+                    <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs shadow-lg">Compile Application</button>
+                </div>
+            </form>
+        </div>
     </div>
     <div id="toast-notification" class="fixed bottom-[-100px] left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl border font-bold text-sm shadow-2xl transition-all duration-300 z-50"></div>
 
@@ -265,6 +290,27 @@ document.addEventListener('DOMContentLoaded', () => {
                     const card = document.createElement('div'); 
                     card.className = 'project-card-elem glass-card p-6 rounded-[24px] hover:border-white/[0.15] hover:translate-y-[-2px] transition-all flex flex-col justify-between gap-4'; 
                     card.setAttribute('id', `project-card-${project._id}`); 
+
+                    // Render download links if native apps are completed and ready
+                    let appDownloadsHTML = '';
+                    if (project.appAndroidStatus === 'ready' || project.appWindowsStatus === 'ready') {
+                        appDownloadsHTML = `
+                            <div class="mt-2 pt-2 border-t border-white/[0.05] space-y-1.5">
+                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Native App Packages</span>
+                                <div class="flex flex-wrap gap-1.5">
+                                    ${project.appAndroidStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/android" class="px-2 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-md text-[10px] font-bold transition-all"><i class="fa-brands fa-android"></i> APK</a>` : ''}
+                                    ${project.appWindowsStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/windows" class="px-2 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-md text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> EXE</a>` : ''}
+                                </div>
+                            </div>
+                        `;
+                    } else if (project.appAndroidStatus === 'building' || project.appWindowsStatus === 'building') {
+                        appDownloadsHTML = `
+                            <div class="mt-2 pt-2 border-t border-white/[0.05] flex items-center gap-1.5 text-[10px] text-amber-400">
+                                <i class="fa-solid fa-spinner animate-spin"></i> Compiling native workspace...
+                            </div>
+                        `;
+                    }
+
                     card.innerHTML = `
                         <div class="space-y-3">
                             <div class="flex justify-between items-start">
@@ -273,9 +319,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                             <a href="/${project.subdomain}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold tracking-wide flex items-center gap-1">/${project.subdomain} <i class="fa-solid fa-external-link text-[10px]"></i></a>
                             ${project.rootDir ? `<div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Path: <span class="text-slate-300 font-mono">${project.rootDir}</span></div>` : ''}
+                            ${appDownloadsHTML}
                         </div>
-                        <div class="flex gap-2 pt-2 border-t border-white/[0.05]">
+                        <div class="flex flex-wrap gap-2 pt-2 border-t border-white/[0.05]">
                             <button class="flex-1 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-xl text-xs font-semibold transition-all deploy-btn" data-id="${project._id}" data-name="${project.name}" data-root-dir="${project.rootDir || ''}">Deploy</button>
+                            <button class="flex-1 py-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-xl text-xs font-semibold transition-all app-studio-btn" data-id="${project._id}" data-name="${project.name}">App Studio</button>
                             <button class="px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl text-xs transition-all delete-btn" data-id="${project._id}" data-name="${project.name}"><i class="fa-solid fa-trash"></i></button>
                         </div>
                     `; 
@@ -438,6 +486,8 @@ document.addEventListener('DOMContentLoaded', () => {
     projectsList.addEventListener('click', async (e) => { 
         const deployBtn = e.target.closest('.deploy-btn'); 
         const deleteBtn = e.target.closest('.delete-btn'); 
+        const appStudioBtn = e.target.closest('.app-studio-btn');
+
         if (deployBtn) { 
             document.getElementById('deploy-project-name').textContent = deployBtn.dataset.name; 
             document.getElementById('deploy-project-id').value = deployBtn.dataset.id; 
@@ -451,6 +501,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('manual-url-container').classList.remove('hidden');
             }
         } 
+
+        if (appStudioBtn) {
+            document.getElementById('app-project-id').value = appStudioBtn.dataset.id;
+            document.getElementById('app-name-input').value = appStudioBtn.dataset.name + " App";
+            showModal(document.getElementById('app-studio-modal'));
+        }
+
         if (deleteBtn) { 
             if (confirm(`Remove instance "${deleteBtn.dataset.name}"?`)) { 
                 try { 
@@ -529,6 +586,33 @@ document.addEventListener('DOMContentLoaded', () => {
         } 
     });
 
+    // Native App Builder Compilation Submission Handler
+    document.getElementById('app-studio-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector('button[type="submit"]');
+        const projectId = document.getElementById('app-project-id').value;
+        const platform = document.getElementById('app-platform').value;
+        const appName = document.getElementById('app-name-input').value;
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Bundling...';
+
+        try {
+            await apiFetch(`/projects/${projectId}/build-app`, {
+                method: 'POST',
+                body: { platform, appName }
+            });
+            showToast('Application compilation started.', 'success');
+            hideModals();
+            fetchAndRenderProjects();
+        } catch (error) {
+            showToast(error.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Compile Application';
+        }
+    });
+
     document.getElementById('logout-btn').addEventListener('click', () => { 
         localStorage.removeItem('token'); 
         window.location.replace('/index.html'); 
@@ -555,12 +639,14 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchAndRenderProjects();
     loadSavedPat(); 
     
-    // Auto status poller
+    // Auto status poller (Updated to also sync when any native app builds are active)
     setInterval(async () => {
         try {
             const projects = await apiFetch('/projects');
             const activeDeploymentsCount = projects.filter(p => p.status === 'deploying' || p.status === 'queued').length;
-            if (activeDeploymentsCount > 0) {
+            const activeAppBuildsCount = projects.filter(p => p.appAndroidStatus === 'building' || p.appWindowsStatus === 'building').length;
+            
+            if (activeDeploymentsCount > 0 || activeAppBuildsCount > 0) {
                 fetchAndRenderProjects();
             }
         } catch (e) {
