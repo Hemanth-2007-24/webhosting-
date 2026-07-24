@@ -157,21 +157,24 @@ function zipDirectory(sourceDir, outPath) {
 
 // --- INITIALIZE GENERIC ANDROID WEBVIEW TEMPLATE APK ---
 const TEMPLATE_APK_PATH = path.join(APPS_DIR, 'webview_base_template.apk');
-async function verifyBaseApkTemplate() {
+
+// Robust download checker helper with promise resolution
+async function ensureBaseApkTemplate() {
     if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
-        try {
-            console.log("📥 Downloading baseline Cordova-WebView binary installer template from jsDelivr CDN...");
-            const response = await fetch('https://cdn.jsdelivr.net/gh/mrepol742/web-appp@master/release/debug.apk');
-            if (!response.ok) throw new Error("Template repository download channel down.");
-            const buffer = await response.arrayBuffer();
-            await fs.writeFile(TEMPLATE_APK_PATH, Buffer.from(buffer));
-            console.log("✅ Baseline APK template cached successfully.");
-        } catch (err) {
-            console.error("❌ Failed to cache baseline template APK:", err.message);
+        console.log("📥 Baseline template APK missing or not yet cached. Fetching on demand from jsDelivr CDN...");
+        const response = await fetch('https://cdn.jsdelivr.net/gh/mrepol742/web-appp@master/release/debug.apk');
+        if (!response.ok) {
+            throw new Error("Unable to retrieve baseline APK template from secure CDN.");
         }
+        const buffer = await response.arrayBuffer();
+        await fs.ensureDir(path.dirname(TEMPLATE_APK_PATH));
+        await fs.writeFile(TEMPLATE_APK_PATH, Buffer.from(buffer));
+        console.log("✅ Baseline APK template cached successfully.");
     }
 }
-verifyBaseApkTemplate();
+
+// Trigger background download on server startup
+ensureBaseApkTemplate().catch(err => console.error("⚠️ Background template pre-fetch failed:", err.message));
 
 // =================================================================
 // ==                         API ROUTES                          ==
@@ -469,8 +472,8 @@ app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), a
                     console.log(`[${project.name}] Windows Desktop launcher VBS compiled successfully.`);
 
                 } else if (platform === 'android') {
-                    // Inject WebView target configurations directly to baseline APK file template
-                    await verifyBaseApkTemplate();
+                    // Inject WebView target configurations directly to baseline APK file template (using on-demand download check)
+                    await ensureBaseApkTemplate();
                     
                     if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
                         throw new Error("Baseline template APK was not cached on server.");
@@ -529,7 +532,8 @@ app.post('/api/build-app-direct', authMiddleware, upload.single('icon'), async (
             await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
             console.log(`[DIRECT_BUILD] Direct VBScript launcher packaged successfully.`);
         } else if (platform === 'android') {
-            await verifyBaseApkTemplate();
+            // Check and fetch baseline template APK dynamically from CDN if it is missing
+            await ensureBaseApkTemplate();
             
             if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
                 throw new Error("Baseline template APK was not cached on server.");
