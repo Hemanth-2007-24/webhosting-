@@ -639,18 +639,18 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchAndRenderProjects();
     loadSavedPat(); 
     
-    // Auto status poller (Updated to also sync when any native app builds are active)
+    // Fixed auto status poller: Watches the DOM for ongoing builds and updates until completion
     setInterval(async () => {
         try {
-            const projects = await apiFetch('/projects');
-            const activeDeploymentsCount = projects.filter(p => p.status === 'deploying' || p.status === 'queued').length;
-            const activeAppBuildsCount = projects.filter(p => p.appAndroidStatus === 'building' || p.appWindowsStatus === 'building').length;
+            // Detect if any project card is currently showing an active loading state in the DOM
+            const isUIRenderingActiveBuild = document.body.innerHTML.includes('Bundling WebView packages...') || 
+                                             document.querySelector('.status-badge.deploying, .status-badge.queued') !== null;
             
-            if (activeDeploymentsCount > 0 || activeAppBuildsCount > 0) {
-                fetchAndRenderProjects();
+            if (isUIRenderingActiveBuild) {
+                await fetchAndRenderProjects();
             }
         } catch (e) {
-            console.error(e);
+            console.error("Sync poller failure:", e);
         }
     }, 4000);
 });

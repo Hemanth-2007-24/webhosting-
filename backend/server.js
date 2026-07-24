@@ -34,13 +34,7 @@ const UserSchema = new mongoose.Schema({
     githubPat: { type: String, default: '' }
 });
 
-UserSchema.pre('save', async function(next) { 
-    if (this.isModified('password')) { 
-        this.password = await bcrypt.hash(this.password, 10); 
-    } 
-    next(); 
-});
-
+UserSchema.pre('save', async function(next) { if (this.isModified('password')) { this.password = await bcrypt.hash(this.password, 10); } next(); });
 const User = mongoose.model('User', UserSchema);
 
 const ProjectSchema = new mongoose.Schema({ 
@@ -140,7 +134,6 @@ function zipDirectory(sourceDir, outPath) {
         exec(`zip -r "${outPath}" .`, { cwd: sourceDir }, (error) => {
             if (error) {
                 console.error("Native zip command failed, attempting tar fallback...", error);
-                // Fallback to tar if zip tool is not installed
                 exec(`tar -czf "${outPath}" .`, { cwd: sourceDir }, (tarError) => {
                     if (tarError) reject(tarError);
                     else resolve();
@@ -210,7 +203,6 @@ app.post('/api/user/pat', authMiddleware, async (req, res) => {
     }
 });
 
-// FETCH GITHUB REPOSITORIES FOR THE USER
 app.get('/api/user/repos', authMiddleware, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
@@ -428,7 +420,7 @@ app.post('/api/projects/:id/build-app', authMiddleware, async (req, res) => {
         }
 
         const updateField = platform === 'android' ? { appAndroidStatus: 'building', appName: cleanAppName } : { appWindowsStatus: 'building', appName: cleanAppName };
-        await project.updateOne(updateField);
+        await Project.findByIdAndUpdate(projectId, updateField);
 
         console.log(`[${project.name}] --> Compiling borderless native WebView container for: ${platform}`);
         res.status(202).json({ message: 'Native WebView compilation sequence active.' });
@@ -449,7 +441,7 @@ app.post('/api/projects/:id/build-app', authMiddleware, async (req, res) => {
                     // Create borderless desktop WebView wrapper launcher
                     const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
                     const batchScript = `@echo off\nmsedge.exe --app=${targetProjectUrl} --window-size=1280,800\n`;
-                    const readme = `WebHost Desktop App: ${cleanAppName}\n===============================\n\nTo run your borderless application:\n- Simply execute "Launcher.vbs" (this runs the app silently without a black CMD window).\n- Or execute "Launcher.bat" to run manually.\n`;
+                    const readme = `WebHost Desktop App: ${cleanAppName}\n===============================\n\nTo run your borderless application:\n- Execute "Launcher.vbs" (this runs the app silently).\n- Or execute "Launcher.bat" to run manually.\n`;
 
                     await fs.outputFile(path.join(tempWorkspace, 'Launcher.vbs'), vbsScript);
                     await fs.outputFile(path.join(tempWorkspace, 'Launcher.bat'), batchScript);
@@ -457,7 +449,7 @@ app.post('/api/projects/:id/build-app', authMiddleware, async (req, res) => {
                     
                     // Bundle files into active zip payload
                     await zipDirectory(tempWorkspace, finalPackageZip);
-                    await project.updateOne({ appWindowsStatus: 'ready' });
+                    await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
                     console.log(`[${project.name}] Windows Desktop launcher packaged successfully.`);
 
                 } else if (platform === 'android') {
@@ -472,7 +464,7 @@ app.post('/api/projects/:id/build-app', authMiddleware, async (req, res) => {
 
                     // Package Android Java WebView source tree
                     await zipDirectory(tempWorkspace, finalPackageZip);
-                    await project.updateOne({ appAndroidStatus: 'ready' });
+                    await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
                     console.log(`[${project.name}] Android WebView container tree compiled successfully.`);
                 }
 
@@ -481,7 +473,7 @@ app.post('/api/projects/:id/build-app', authMiddleware, async (req, res) => {
             } catch (err) {
                 console.error(`Native App Compilation failure for project ${project.name}:`, err);
                 const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
-                await project.updateOne(failField);
+                await Project.findByIdAndUpdate(projectId, failField);
                 await fs.remove(tempWorkspace);
             }
         }, 10000);
