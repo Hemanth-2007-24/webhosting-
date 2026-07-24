@@ -19,27 +19,26 @@
         <!-- Logged-OUT View -->
         <div id="logged-out-view">
             <section class="section text-center">
-                <h1>Deploy Static Sites in Seconds</h1>
+                <h1 class="section-title" style="font-size: 3.5rem; margin-top: 2rem;">Deploy Static Sites in <span>Seconds</span></h1>
                 <p class="subtitle">
                     Connect your GitHub repo or upload a zip file. We handle the rest. Simple, fast, and free hosting for your projects.
                 </p>
-                <a href="#auth-section" class="btn btn-primary btn-large">Get Started for Free</a>
+                <a href="#auth-section" class="btn btn-primary btn-large">Get Started for Free <i class="fas fa-arrow-right"></i></a>
             </section>
 
             <section class="section">
-                <h2 class="section-title">Why <span>WebHost</span>?</h2>
+                <h2 class="section-title">Why Choose <span>WebHost</span>?</h2>
                 <div class="features-grid">
                     <div class="card feature-card">
                         <div class="icon"><i class="fab fa-github"></i></div>
                         <h3>GitHub Integration</h3>
-                        <p>Deploy directly from public GitHub repositories. Your site is live in moments.</p>
+                        <p>Deploy directly from public and private GitHub repositories with your saved secure credentials. Your site goes live instantly.</p>
                     </div>
                     <div class="card feature-card">
                         <div class="icon"><i class="fas fa-file-zipper"></i></div>
-                        <h3>Manual Upload</h3>
-                        <p>No Git? No problem. Just drag and drop a .zip file of your static site.</p>
+                        <h3>Manual Zip Upload</h3>
+                        <p>No Git? No problem. Simply drag and drop a compiled .zip file of your static builds directly onto our server.</p>
                     </div>
-                  
                 </div>
             </section>
 
@@ -54,63 +53,54 @@
                     <form id="login-form" class="auth-form active">
                         <input type="email" id="login-email" class="form-input" placeholder="Email Address" required>
                         <input type="password" id="login-password" class="form-input" placeholder="Password" required>
-                        <button type="submit" class="btn btn-primary full-width">Login</button>
+                        <button type="submit" class="btn btn-primary full-width">Login to Account</button>
                     </form>
 
                     <!-- Register Form -->
                     <form id="register-form" class="auth-form">
                         <input type="email" id="register-email" class="form-input" placeholder="Email Address" required>
                         <input type="password" id="register-password" class="form-input" placeholder="Password (min 6 chars)" required minlength="6">
-                        <button type="submit" class="btn btn-primary full-width">Create Account</button>
+                        <button type="submit" class="btn btn-primary full-width">Create Free Account</button>
                     </form>
                 </div>
             </section>
         </div>
 
         <!-- Logged-IN View -->
-        <div id="logged-in-view" class="hidden text-center">
-             <h1 class="section-title">Welcome back!</h1>
+        <div id="logged-in-view" class="hidden text-center" style="padding: 4rem 0;">
+             <h1 class="section-title" style="font-size: 3rem;">Welcome back!</h1>
              <p class="subtitle">You are logged in. Manage your sites from your personal dashboard.</p>
-             <a href="dashboard.html" class="btn btn-primary btn-large">Go to Dashboard</a>
+             <a href="dashboard.html" class="btn btn-primary btn-large">Go to Dashboard <i class="fas fa-gauge-high"></i></a>
         </div>
     </main>
     <div id="toast-notification"></div>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // --- CONFIGURATION ---
-    const API_BASE_URL = ''; // Leave empty for production, it will use relative paths
+    const API_BASE_URL = ''; 
 
-    // --- DOM ELEMENTS ---
     const headerControls = document.getElementById('header-controls');
     const loggedOutView = document.getElementById('logged-out-view');
     const loggedInView = document.getElementById('logged-in-view');
     const toast = document.getElementById('toast-notification');
 
-    // --- CHECK FOR LOGGED IN USER ---
-    const token = localStorage.getItem('token');
-
-    // --- UI STATE MANAGEMENT ---
     const updateUI = () => {
         if (localStorage.getItem('token')) {
-            // Logged-in state
             loggedOutView.classList.add('hidden');
             loggedInView.classList.remove('hidden');
             headerControls.innerHTML = `
-                <a href="dashboard.html" class="btn">Dashboard</a>
+                <a href="dashboard.html" class="btn btn-secondary">Dashboard</a>
                 <button id="logout-btn" class="btn btn-danger">Logout</button>
             `;
             document.getElementById('logout-btn').addEventListener('click', handleLogout);
         } else {
-            // Logged-out state
             loggedOutView.classList.remove('hidden');
             loggedInView.classList.add('hidden');
-            headerControls.innerHTML = `<a href="#auth-section" class="btn">Login / Register</a>`;
+            headerControls.innerHTML = `<a href="#auth-section" class="btn btn-primary">Login / Register</a>`;
             initializeAuthForms();
         }
     };
 
-    // --- EVENT HANDLERS & LOGIC ---
     function initializeAuthForms() {
         const loginForm = document.getElementById('login-form');
         const registerForm = document.getElementById('register-form');
@@ -204,7 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => { toast.classList.remove('show'); }, 4000);
     }
 
-    // --- INITIALIZE THE PAGE ---
     updateUI();
 });
 </script>

@@ -47,7 +47,7 @@ const ProjectSchema = new mongoose.Schema({
     subdomain: { type: String, required: true, unique: true }, 
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, 
     status: { type: String, enum: ['queued', 'deploying', 'ready', 'failed'], default: 'queued' },
-    rootDir: { type: String, default: '' } // Stores configured deployment folder
+    rootDir: { type: String, default: '' }
 }, { timestamps: true });
 
 const Project = mongoose.model('Project', ProjectSchema);
@@ -75,15 +75,52 @@ fs.ensureDirSync(UPLOADS_DIR);
 fs.ensureDirSync(DEPLOYMENTS_DIR); 
 const upload = multer({ dest: UPLOADS_DIR });
 
-// --- DEPLOYMENT HELPER ---
-async function findBuildDir(basePath) { 
+// --- SMART INDEX FINDER SYSTEM ---
+async function findIndexHtmlRecursive(dir, currentDepth, maxDepth) {
+    if (currentDepth > maxDepth) return null;
+    const items = await fs.readdir(dir, { withFileTypes: true });
+    
+    // Check files in current folder first
+    for (const item of items) {
+        if (item.isFile() && item.name.toLowerCase() === 'index.html') {
+            return dir;
+        }
+    }
+    
+    // Check nested folders, ignoring system folders
+    for (const item of items) {
+        if (item.isDirectory() && !['node_modules', '.git', '.github'].includes(item.name)) {
+            const subPath = path.join(dir, item.name);
+            const found = await findIndexHtmlRecursive(subPath, currentDepth + 1, maxDepth);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+async function findIndexHtmlDir(basePath) { 
+    // 1. Check root directory
+    if (await fs.pathExists(path.join(basePath, 'index.html'))) { 
+        return basePath; 
+    } 
+    
+    // 2. Check common output build subdirectories
     const commonDirs = ['dist', 'build', 'public', 'out']; 
     for (const dir of commonDirs) { 
         const potentialPath = path.join(basePath, dir); 
-        if (await fs.pathExists(potentialPath)) { 
+        if (await fs.pathExists(path.join(potentialPath, 'index.html'))) { 
             return potentialPath; 
         } 
     } 
+    
+    // 3. Recursive lookup fallback (Up to 3 directories deep)
+    try {
+        const detectedPath = await findIndexHtmlRecursive(basePath, 0, 3);
+        if (detectedPath) return detectedPath;
+    } catch (error) {
+        console.error("Smart Index Finder lookup error:", error);
+    }
+    
     return basePath; 
 }
 
@@ -145,7 +182,6 @@ app.post('/api/user/pat', authMiddleware, async (req, res) => {
     }
 });
 
-// FETCH GITHUB REPOSITORIES FOR THE USER
 app.get('/api/user/repos', authMiddleware, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
@@ -239,7 +275,6 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
             return res.status(404).json({ message: 'Project not found or you are not the owner.' }); 
         } 
         
-        // Update root directory settings if provided
         const normalizedRootDir = rootDir !== undefined ? rootDir.trim() : project.rootDir;
         await project.updateOne({ status: 'deploying', rootDir: normalizedRootDir }); 
         console.log(`[${project.name}] --> Deployment started.`); 
@@ -271,22 +306,23 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
             await simpleGit().clone(cloneURL, tempCloneDir, { '--depth': 1 }); 
             console.log(`[${project.name}] ... Git clone successful.`); 
             
-            // Determine source path with root folder configurations and path traversal protection
-            let sourceDir = tempCloneDir;
+            // Resolve starting path cleanly
+            let startPath = tempCloneDir;
             if (normalizedRootDir) {
                 const resolvedPath = path.resolve(tempCloneDir, normalizedRootDir);
                 if (!resolvedPath.startsWith(tempCloneDir)) {
-                    throw new Error("Security Violation: Invalid Root Directory path escaping scope.");
+                    throw new Error("Security Violation: Target path escapes deployment directory.");
                 }
-                sourceDir = resolvedPath;
-                if (!(await fs.pathExists(sourceDir))) {
+                startPath = resolvedPath;
+                if (!(await fs.pathExists(startPath))) {
                     throw new Error(`The configured root directory '${normalizedRootDir}' does not exist inside the repository.`);
                 }
-            } else {
-                sourceDir = await findBuildDir(tempCloneDir); 
             }
             
-            console.log(`[${project.name}] STEP 3: Deploying from directory: ${sourceDir}`); 
+            // Run Smart Index Finder starting from the resolved start folder
+            const sourceDir = await findIndexHtmlDir(startPath);
+            
+            console.log(`[${project.name}] STEP 3: Deploying from directory containing index.html: ${sourceDir}`); 
             await fs.copy(sourceDir, projectDeployPath); 
             console.log(`[${project.name}] STEP 4: Copied files to final deployment directory.`); 
             await fs.remove(tempCloneDir); 
