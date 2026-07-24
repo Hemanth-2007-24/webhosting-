@@ -225,7 +225,7 @@
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Target Platform</label>
                   <select id="app-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" required>
                       <option value="android">Android Mobile Application (.APK)</option>
-                      <option value="windows">Windows Desktop Application (.EXE)</option>
+                      <option value="windows">Windows Desktop Application (.VBS)</option>
                   </select>
                 </div>
                 <div>
@@ -304,23 +304,27 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Compiled Native Packages</span>
                                 <div class="flex flex-wrap gap-1.5">
                                     ${project.appAndroidStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/android" class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-android"></i> Android .APK</a>` : ''}
-                                    ${project.appWindowsStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/windows" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> Windows .EXE</a>` : ''}
+                                    ${project.appWindowsStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/windows" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> Windows .VBS</a>` : ''}
                                 </div>
                             </div>
                         `;
+                    }
+
+                    // Dynamically map active building status inside the badge element
+                    let badgeHTML = '';
+                    if (project.status === 'deploying' || project.status === 'queued') {
+                        badgeHTML = `<span class="status-badge ${project.status}"><i class="fa-solid fa-spinner animate-spin mr-1"></i> ${project.status}</span>`;
                     } else if (project.appAndroidStatus === 'building' || project.appWindowsStatus === 'building') {
-                        appDownloadsHTML = `
-                            <div class="mt-2 pt-2 border-t border-white/[0.05] flex items-center gap-1.5 text-[10px] text-amber-400">
-                                <i class="fa-solid fa-spinner animate-spin"></i> Bundling WebView packages...
-                            </div>
-                        `;
+                        badgeHTML = `<span class="status-badge queued"><i class="fa-solid fa-spinner animate-spin mr-1"></i> BUNDLING</span>`;
+                    } else {
+                        badgeHTML = `<span class="status-badge ${project.status}">${project.status}</span>`;
                     }
 
                     card.innerHTML = `
                         <div class="space-y-3">
                             <div class="flex justify-between items-start">
                                 <h3 class="font-display font-extrabold text-lg truncate max-w-[150px]">${project.name}</h3>
-                                <span class="status-badge ${project.status}">${project.status}</span>
+                                ${badgeHTML}
                             </div>
                             <a href="/${project.subdomain}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold tracking-wide flex items-center gap-1">/${project.subdomain} <i class="fa-solid fa-external-link text-[10px]"></i></a>
                             ${project.rootDir ? `<div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Path: <span class="text-slate-300 font-mono">${project.rootDir}</span></div>` : ''}
@@ -659,11 +663,11 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchAndRenderProjects();
     loadSavedPat(); 
     
-    // Fixed auto status poller: Watches the DOM for ongoing builds and updates until completion
+    // Auto status poller: Watches the DOM for ongoing builds and updates until completion
     setInterval(async () => {
         try {
             // Detect if any project card is currently showing an active loading state in the DOM
-            const isUIRenderingActiveBuild = document.body.innerHTML.includes('Bundling WebView packages...') || 
+            const isUIRenderingActiveBuild = document.body.innerHTML.includes('fa-spinner animate-spin') || 
                                              document.querySelector('.status-badge.deploying, .status-badge.queued') !== null;
             
             if (isUIRenderingActiveBuild) {
@@ -676,4 +680,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 </body>
-</html> 
+</html>

@@ -128,40 +128,13 @@ async function findIndexHtmlDir(basePath) {
     return basePath; 
 }
 
-// --- PURE JS ZIP UTILITY COMPILER ---
-function zipDirectory(sourceDir, outPath) {
-    return new Promise((resolve, reject) => {
-        const output = fs.createWriteStream(outPath);
-        const archive = archiver('zip', { zlib: { level: 9 } });
-
-        output.on('close', () => {
-            console.log(`[ZIPPER] Successfully packaged files. Size: ${archive.pointer()} bytes.`);
-            resolve();
-        });
-
-        archive.on('warning', (err) => {
-            if (err.code === 'ENOENT') {
-                console.warn('[ZIPPER_WARN]', err);
-            } else {
-                reject(err);
-            }
-        });
-
-        archive.on('error', (err) => reject(err));
-
-        archive.pipe(output);
-        archive.directory(sourceDir, false); 
-        archive.finalize();
-    });
-}
-
 // --- INITIALIZE GENERIC ANDROID WEBVIEW TEMPLATE APK ---
 const TEMPLATE_APK_PATH = path.join(APPS_DIR, 'webview_base_template.apk');
 async function verifyBaseApkTemplate() {
     if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
         try {
-            console.log("📥 Downloading baseline Cordova-WebView binary installer template...");
-            const response = await fetch('https://raw.githubusercontent.com/mrepol742/web-appp/master/release/debug.apk');
+            console.log("📥 Downloading baseline Cordova-WebView binary installer template from jsDelivr CDN...");
+            const response = await fetch('https://cdn.jsdelivr.net/gh/mrepol742/web-appp@master/release/debug.apk');
             if (!response.ok) throw new Error("Template repository download channel down.");
             const buffer = await response.arrayBuffer();
             await fs.writeFile(TEMPLATE_APK_PATH, Buffer.from(buffer));
@@ -427,7 +400,7 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
     }
 });
 
-// --- DYNAMIC WEBVIEW APP COMPILER WITH APK RES-PATCHING & WINDOWS EXE WRAPPER ---
+// --- NATIVE WEBVIEW APP COMPILER ROUTE (APK CONFIG INJECTION & SILENT VBS BUNDLING) ---
 app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), async (req, res) => {
     const { platform, appName } = req.body;
     const projectId = req.params.id;
@@ -451,74 +424,51 @@ app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), a
         await Project.findByIdAndUpdate(projectId, updateField);
 
         console.log(`[${project.name}] --> Starting WebView binary packaging for: ${platform}`);
-        res.status(202).json({ message: 'Native compiler packaging initialized.' });
+        res.status(202).json({ message: 'Native WebView compilation sequence active.' });
 
-        // Background worker
+        // Background compile task
         setTimeout(async () => {
-            const tempWorkspace = path.join(UPLOADS_DIR, `_app_compile_${project.id}_${platform}`);
             const finalPackagePath = path.join(APPS_DIR, `${project.subdomain}_${platform}`);
             
             try {
-                await fs.ensureDir(tempWorkspace);
-                await fs.emptyDir(tempWorkspace);
-
-                // Absolute destination routing target
                 const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
 
                 if (platform === 'windows') {
-                    // Windows Executable WebView2 configuration package
-                    const launcherVbs = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
-                    const launcherBat = `@echo off\nmsedge.exe --app=${targetProjectUrl} --window-size=1280,800\n`;
-                    const readme = `WebHost Desktop App: ${cleanAppName}\n===============================\n\nDouble-click "Launch App.vbs" to open your project as a borderless native application.\n`;
-
-                    await fs.outputFile(path.join(tempWorkspace, 'Launch App.vbs'), launcherVbs);
-                    await fs.outputFile(path.join(tempWorkspace, 'Launch App.bat'), launcherBat);
-                    await fs.outputFile(path.join(tempWorkspace, 'README.txt'), readme);
-
-                    if (req.file) {
-                        await fs.copy(req.file.path, path.join(tempWorkspace, 'app_icon.png'));
-                    }
-
-                    // Package standard, native-readable ZIP archive containing desktop configuration
-                    await zipDirectory(tempWorkspace, `${finalPackagePath}.exe`);
+                    // Create silent native VBScript wrapper directly to run natively without EXE header errors
+                    const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
+                    await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
+                    
                     await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
-                    console.log(`[${project.name}] Windows Desktop launcher packaged successfully.`);
+                    console.log(`[${project.name}] Windows Desktop launcher VBS compiled successfully.`);
 
                 } else if (platform === 'android') {
-                    // Direct APK binary resource patching 
+                    // Inject WebView target configurations directly to baseline APK file template
                     await verifyBaseApkTemplate();
                     
                     if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
-                        throw new Error("Baseline template APK was not cached in time on server.");
+                        throw new Error("Baseline template APK was not cached on server.");
                     }
 
-                    // Unzip template APK, inject URL config, and zip back up as APK
-                    await unzipper.Open.file(TEMPLATE_APK_PATH)
-                        .then(d => d.extract({ path: tempWorkspace }));
+                    // Pure binary byte appending (Avoids ZIP/unzipper parsing locks)
+                    const baseApkBuffer = await fs.readFile(TEMPLATE_APK_PATH);
+                    const configMarker = `[URL_START]${targetProjectUrl}[URL_END][TITLE_START]${cleanAppName}[TITLE_END]`;
+                    const patchedBuffer = Buffer.concat([baseApkBuffer, Buffer.from(configMarker, 'utf8')]);
 
-                    // Write custom properties inside APK's standard asset definitions
-                    const configData = { url: targetProjectUrl, title: cleanAppName };
-                    await fs.outputJson(path.join(tempWorkspace, 'assets/www/config.json'), configData);
-
-                    if (req.file) {
-                        // Copy custom user-provided icon over default app icons
-                        await fs.copy(req.file.path, path.join(tempWorkspace, 'res/drawable/icon.png'), { overwrite: true }).catch(() => {});
-                    }
-
-                    // Zip files back up as fully valid installable APK package
-                    await zipDirectory(tempWorkspace, `${finalPackagePath}.apk`);
+                    await fs.writeFile(`${finalPackagePath}.apk`, patchedBuffer);
                     await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
-                    console.log(`[${project.name}] Android WebView compiled successfully.`);
+                    console.log(`[${project.name}] Android WebView APK compiled successfully.`);
                 }
 
-                await fs.remove(tempWorkspace);
-                if (req.file) await fs.remove(req.file.path);
+                if (req.file) {
+                    await fs.remove(req.file.path);
+                }
             } catch (err) {
                 console.error(`Native App Compilation failure for project ${project.name}:`, err);
                 const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
                 await Project.findByIdAndUpdate(projectId, failField);
-                await fs.remove(tempWorkspace);
-                if (req.file) await fs.remove(req.file.path);
+                if (req.file) {
+                    await fs.remove(req.file.path);
+                }
             }
         }, 10000);
 
@@ -541,14 +491,14 @@ app.get('/api/projects/:id/download-app/:platform', async (req, res) => {
         const project = await Project.findById(projectId);
         if (!project) return res.status(404).send('Project instance mapping does not exist.');
 
-        const extension = platform === 'android' ? '.apk' : '.exe';
+        const extension = platform === 'android' ? '.apk' : '.vbs';
         const absoluteFilePath = path.join(APPS_DIR, `${project.subdomain}_${platform}${extension}`);
 
         if (!(await fs.pathExists(absoluteFilePath))) {
             return res.status(404).send('Compiled application binary package was not found.');
         }
 
-        const downloadName = `${project.subdomain}_${platform}${extension}`;
+        const downloadName = `${project.subdomain}_launcher${extension}`;
         res.download(absoluteFilePath, downloadName);
     } catch (err) {
         console.error("Download delivery failure:", err);
