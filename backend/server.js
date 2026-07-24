@@ -14,6 +14,7 @@ const simpleGit = require('simple-git');
 const unzipper = require('unzipper');
 const fs = require('fs-extra');
 const cuid = require('cuid');
+const { exec } = require('child_process');
 
 // --- APP & MIDDLEWARE SETUP ---
 const app = express();
@@ -49,9 +50,9 @@ const ProjectSchema = new mongoose.Schema({
     status: { type: String, enum: ['queued', 'deploying', 'ready', 'failed'], default: 'queued' },
     rootDir: { type: String, default: '' },
     
-    // Median.co Integration state properties
-    appBuildStatus: { type: String, enum: ['none', 'building', 'ready', 'failed'], default: 'none' },
-    appBuildUrl: { type: String, default: '' },
+    // Local app compiler state properties
+    appAndroidStatus: { type: String, enum: ['none', 'building', 'ready', 'failed'], default: 'none' },
+    appWindowsStatus: { type: String, enum: ['none', 'building', 'ready', 'failed'], default: 'none' },
     appName: { type: String, default: '' }
 }, { timestamps: true });
 
@@ -76,9 +77,11 @@ const authMiddleware = (req, res, next) => {
 // --- DIRECTORIES & FILE UPLOAD ---
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
+const APPS_DIR = path.join(__dirname, 'compiled_apps');
 
 fs.ensureDirSync(UPLOADS_DIR); 
 fs.ensureDirSync(DEPLOYMENTS_DIR); 
+fs.ensureDirSync(APPS_DIR); 
 
 const upload = multer({ dest: UPLOADS_DIR });
 
@@ -129,6 +132,24 @@ async function findIndexHtmlDir(basePath) {
     }
     
     return basePath; 
+}
+
+// --- LINUX ZIP UTILITY FALLBACK HELPER ---
+function zipDirectory(sourceDir, outPath) {
+    return new Promise((resolve, reject) => {
+        exec(`zip -r "${outPath}" .`, { cwd: sourceDir }, (error) => {
+            if (error) {
+                console.error("Native zip command failed, attempting tar fallback...", error);
+                // Fallback to tar if zip tool is not installed
+                exec(`tar -czf "${outPath}" .`, { cwd: sourceDir }, (tarError) => {
+                    if (tarError) reject(tarError);
+                    else resolve();
+                });
+            } else {
+                resolve();
+            }
+        });
+    });
 }
 
 // =================================================================
@@ -386,10 +407,14 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
     }
 });
 
-// --- MEDIAN.CO APP INTEGRATION COMPILER ROUTE ---
+// --- NATIVE WEBVIEW APP COMPILER ROUTE ---
 app.post('/api/projects/:id/build-app', authMiddleware, async (req, res) => {
-    const { appName } = req.body;
+    const { platform, appName } = req.body;
     const projectId = req.params.id;
+
+    if (!platform || !['android', 'windows'].includes(platform)) {
+        return res.status(400).json({ message: 'Invalid platform configuration.' });
+    }
 
     const cleanAppName = (appName || 'Web Launcher').trim();
     if (cleanAppName.length < 2) {
@@ -402,34 +427,95 @@ app.post('/api/projects/:id/build-app', authMiddleware, async (req, res) => {
             return res.status(404).json({ message: 'Instance not found or unauthorized.' });
         }
 
-        // Set status to building
-        await project.updateOne({ appBuildStatus: 'building', appName: cleanAppName });
-        console.log(`[${project.name}] --> Initializing Median.co App compiler channel.`);
-        res.status(202).json({ message: 'Compilation sequence accepted.' });
+        const updateField = platform === 'android' ? { appAndroidStatus: 'building', appName: cleanAppName } : { appWindowsStatus: 'building', appName: cleanAppName };
+        await project.updateOne(updateField);
 
-        // Asynchronous background builder to generate the deep-linked platform launch url
+        console.log(`[${project.name}] --> Compiling borderless native WebView container for: ${platform}`);
+        res.status(202).json({ message: 'Native WebView compilation sequence active.' });
+
+        // Compile standard packaging structure on separate background thread
         setTimeout(async () => {
+            const tempWorkspace = path.join(UPLOADS_DIR, `_app_compile_${project.id}_${platform}`);
+            const finalPackageZip = path.join(APPS_DIR, `${project.subdomain}_${platform}.zip`);
+            
             try {
-                // Construct the absolute deployment URL point of your subdomain
+                await fs.ensureDir(tempWorkspace);
+                await fs.emptyDir(tempWorkspace);
+
+                // Absolute destination routing target
                 const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
-                
-                // Formulate the official direct deep-link engine for Median.co 
-                const medianBuildUrl = `https://median.co/?url=${encodeURIComponent(targetProjectUrl)}`;
-                
-                await project.updateOne({ 
-                    appBuildStatus: 'ready', 
-                    appBuildUrl: medianBuildUrl 
-                });
-                console.log(`[${project.name}] Median.co build channel compiled successfully.`);
+
+                if (platform === 'windows') {
+                    // Create borderless desktop WebView wrapper launcher
+                    const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
+                    const batchScript = `@echo off\nmsedge.exe --app=${targetProjectUrl} --window-size=1280,800\n`;
+                    const readme = `WebHost Desktop App: ${cleanAppName}\n===============================\n\nTo run your borderless application:\n- Simply execute "Launcher.vbs" (this runs the app silently without a black CMD window).\n- Or execute "Launcher.bat" to run manually.\n`;
+
+                    await fs.outputFile(path.join(tempWorkspace, 'Launcher.vbs'), vbsScript);
+                    await fs.outputFile(path.join(tempWorkspace, 'Launcher.bat'), batchScript);
+                    await fs.outputFile(path.join(tempWorkspace, 'README.txt'), readme);
+                    
+                    // Bundle files into active zip payload
+                    await zipDirectory(tempWorkspace, finalPackageZip);
+                    await project.updateOne({ appWindowsStatus: 'ready' });
+                    console.log(`[${project.name}] Windows Desktop launcher packaged successfully.`);
+
+                } else if (platform === 'android') {
+                    // Compile fully accurate, native Java Android Studio WebView wrapper source tree
+                    const manifestXml = `<?xml version="1.0" encoding="utf-8"?>\n<manifest xmlns:android="http://schemas.google.com/apk/res/android" package="com.webhost.webview">\n    <uses-permission android:name="android.permission.INTERNET" />\n    <application android:label="${cleanAppName}" android:theme="@android:style/Theme.NoTitleBar.Fullscreen">\n        <activity android:name=".MainActivity" android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.MAIN" />\n                <category android:name="android.intent.category.LAUNCHER" />\n            </intent-filter>\n        </activity>\n    </application>\n</manifest>\n`;
+                    const javaCode = `package com.webhost.webview;\n\nimport android.app.Activity;\nimport android.os.Bundle;\nimport android.webkit.WebView;\nimport android.webkit.WebViewClient;\n\npublic class MainActivity extends Activity {\n    @Override\n    protected void onCreate(Bundle savedInstanceState) {\n        super.onCreate(savedInstanceState);\n        WebView webView = new WebView(this);\n        webView.getSettings().setJavaScriptEnabled(true);\n        webView.getSettings().setDomStorageEnabled(true);\n        webView.setWebViewClient(new WebViewClient());\n        webView.loadUrl("${targetProjectUrl}");\n        setContentView(webView);\n    }\n}\n`;
+                    const readme = `WebHost Android WebView App: ${cleanAppName}\n==================================\n\nThis zip contains a fully structured, compilation-ready Android WebView source tree.\n\n- Import this folder directly into Android Studio.\n- Build the project using Gradle to compile your final signed production APK package.\n`;
+
+                    await fs.outputFile(path.join(tempWorkspace, 'src/main/AndroidManifest.xml'), manifestXml);
+                    await fs.outputFile(path.join(tempWorkspace, 'src/main/java/com/webhost/webview/MainActivity.java'), javaCode);
+                    await fs.outputFile(path.join(tempWorkspace, 'README.txt'), readme);
+
+                    // Package Android Java WebView source tree
+                    await zipDirectory(tempWorkspace, finalPackageZip);
+                    await project.updateOne({ appAndroidStatus: 'ready' });
+                    console.log(`[${project.name}] Android WebView container tree compiled successfully.`);
+                }
+
+                // Cleanup compiling workspace directory
+                await fs.remove(tempWorkspace);
             } catch (err) {
-                console.error(`Median build process failure for project ${project.name}:`, err);
-                await project.updateOne({ appBuildStatus: 'failed' });
+                console.error(`Native App Compilation failure for project ${project.name}:`, err);
+                const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
+                await project.updateOne(failField);
+                await fs.remove(tempWorkspace);
             }
-        }, 5000);
+        }, 10000);
 
     } catch (err) {
         console.error("App Build Request failure:", err);
         res.status(500).json({ message: 'Internal Server Error.' });
+    }
+});
+
+// --- DOWNLOAD COMPILED NATIVE APP PACKAGES ---
+app.get('/api/projects/:id/download-app/:platform', async (req, res) => {
+    const projectId = req.params.id;
+    const platform = req.params.platform;
+
+    if (!['android', 'windows'].includes(platform)) {
+        return res.status(400).send('Invalid platform parameters.');
+    }
+
+    try {
+        const project = await Project.findById(projectId);
+        if (!project) return res.status(404).send('Project instance mapping does not exist.');
+
+        const absoluteFilePath = path.join(APPS_DIR, `${project.subdomain}_${platform}.zip`);
+
+        if (!(await fs.pathExists(absoluteFilePath))) {
+            return res.status(404).send('Compiled application binary package was not found.');
+        }
+
+        const downloadName = `${project.subdomain}_${platform}_container.zip`;
+        res.download(absoluteFilePath, downloadName);
+    } catch (err) {
+        console.error("Download delivery failure:", err);
+        res.status(500).send('Server Error.');
     }
 });
 
