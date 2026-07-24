@@ -196,10 +196,21 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let hasSavedPat = false;
 
+    // Fixed fetch utility to serialize plain JavaScript objects as JSON
     const apiFetch = async (endpoint, options = {}) => { 
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            ...options.headers
+        };
+        let body = options.body;
+        if (body && typeof body === 'object' && !(body instanceof FormData)) {
+            headers['Content-Type'] = 'application/json';
+            body = JSON.stringify(body);
+        }
         const res = await fetch(`${API_BASE_URL}/api${endpoint}`, { 
             ...options, 
-            headers: { 'Authorization': `Bearer ${token}`, ...options.headers }, 
+            headers,
+            body
         }); 
         if (res.status === 401) { 
             localStorage.removeItem('token'); 
