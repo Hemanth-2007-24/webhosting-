@@ -14,7 +14,7 @@ const simpleGit = require('simple-git');
 const unzipper = require('unzipper');
 const fs = require('fs-extra');
 const cuid = require('cuid');
-const { exec } = require('child_process');
+const archiver = require('archiver'); // Pure JS ZIP compiler
 
 // --- APP & MIDDLEWARE SETUP ---
 const app = express();
@@ -128,20 +128,30 @@ async function findIndexHtmlDir(basePath) {
     return basePath; 
 }
 
-// --- LINUX ZIP UTILITY FALLBACK HELPER ---
+// --- PURE JS ZIP UTILITY COMPILER ---
 function zipDirectory(sourceDir, outPath) {
     return new Promise((resolve, reject) => {
-        exec(`zip -r "${outPath}" .`, { cwd: sourceDir }, (error) => {
-            if (error) {
-                console.error("Native zip command failed, attempting tar fallback...", error);
-                exec(`tar -czf "${outPath}" .`, { cwd: sourceDir }, (tarError) => {
-                    if (tarError) reject(tarError);
-                    else resolve();
-                });
+        const output = fs.createWriteStream(outPath);
+        const archive = archiver('zip', { zlib: { level: 9 } });
+
+        output.on('close', () => {
+            console.log(`[ZIPPER] Successfully packaged files. Size: ${archive.pointer()} bytes.`);
+            resolve();
+        });
+
+        archive.on('warning', (err) => {
+            if (err.code === 'ENOENT') {
+                console.warn('[ZIPPER_WARN]', err);
             } else {
-                resolve();
+                reject(err);
             }
         });
+
+        archive.on('error', (err) => reject(err));
+
+        archive.pipe(output);
+        archive.directory(sourceDir, false); // append directory contents recursively without nesting folder
+        archive.finalize();
     });
 }
 
@@ -447,7 +457,7 @@ app.post('/api/projects/:id/build-app', authMiddleware, async (req, res) => {
                     await fs.outputFile(path.join(tempWorkspace, 'Launcher.bat'), batchScript);
                     await fs.outputFile(path.join(tempWorkspace, 'README.txt'), readme);
                     
-                    // Bundle files into active zip payload
+                    // Bundle files into active zip payload using Pure JS compiler
                     await zipDirectory(tempWorkspace, finalPackageZip);
                     await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
                     console.log(`[${project.name}] Windows Desktop launcher packaged successfully.`);
@@ -462,7 +472,7 @@ app.post('/api/projects/:id/build-app', authMiddleware, async (req, res) => {
                     await fs.outputFile(path.join(tempWorkspace, 'src/main/java/com/webhost/webview/MainActivity.java'), javaCode);
                     await fs.outputFile(path.join(tempWorkspace, 'README.txt'), readme);
 
-                    // Package Android Java WebView source tree
+                    // Package Android Java WebView source tree using Pure JS compiler
                     await zipDirectory(tempWorkspace, finalPackageZip);
                     await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
                     console.log(`[${project.name}] Android WebView container tree compiled successfully.`);
