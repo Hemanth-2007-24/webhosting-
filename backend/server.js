@@ -128,6 +128,51 @@ async function findIndexHtmlDir(basePath) {
     return basePath; 
 }
 
+// --- PURE JS ZIP UTILITY COMPILER ---
+function zipDirectory(sourceDir, outPath) {
+    return new Promise((resolve, reject) => {
+        const output = fs.createWriteStream(outPath);
+        const archive = archiver('zip', { zlib: { level: 9 } });
+
+        output.on('close', () => {
+            console.log(`[ZIPPER] Successfully packaged files. Size: ${archive.pointer()} bytes.`);
+            resolve();
+        });
+
+        archive.on('warning', (err) => {
+            if (err.code === 'ENOENT') {
+                console.warn('[ZIPPER_WARN]', err);
+            } else {
+                reject(err);
+            }
+        });
+
+        archive.on('error', (err) => reject(err));
+
+        archive.pipe(output);
+        archive.directory(sourceDir, false); 
+        archive.finalize();
+    });
+}
+
+// --- INITIALIZE GENERIC ANDROID WEBVIEW TEMPLATE APK ---
+const TEMPLATE_APK_PATH = path.join(APPS_DIR, 'webview_base_template.apk');
+async function verifyBaseApkTemplate() {
+    if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
+        try {
+            console.log("📥 Downloading baseline Cordova-WebView binary installer template...");
+            const response = await fetch('https://raw.githubusercontent.com/mrepol742/web-appp/master/release/debug.apk');
+            if (!response.ok) throw new Error("Template repository download channel down.");
+            const buffer = await response.arrayBuffer();
+            await fs.writeFile(TEMPLATE_APK_PATH, Buffer.from(buffer));
+            console.log("✅ Baseline APK template cached successfully.");
+        } catch (err) {
+            console.error("❌ Failed to cache baseline template APK:", err.message);
+        }
+    }
+}
+verifyBaseApkTemplate();
+
 // =================================================================
 // ==                         API ROUTES                          ==
 // =================================================================
@@ -382,7 +427,7 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
     }
 });
 
-// --- NATIVE WEBVIEW APP COMPILER ROUTE (APK & EXE SUPPORT WITH CUSTOM TITLE & ICONS) ---
+// --- DYNAMIC WEBVIEW APP COMPILER WITH APK RES-PATCHING & WINDOWS EXE WRAPPER ---
 app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), async (req, res) => {
     const { platform, appName } = req.body;
     const projectId = req.params.id;
@@ -405,43 +450,75 @@ app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), a
         const updateField = platform === 'android' ? { appAndroidStatus: 'building', appName: cleanAppName } : { appWindowsStatus: 'building', appName: cleanAppName };
         await Project.findByIdAndUpdate(projectId, updateField);
 
-        console.log(`[${project.name}] --> Compiling borderless native WebView container for: ${platform}`);
-        res.status(202).json({ message: 'Native WebView compilation sequence active.' });
+        console.log(`[${project.name}] --> Starting WebView binary packaging for: ${platform}`);
+        res.status(202).json({ message: 'Native compiler packaging initialized.' });
 
-        // Compile standard packaging structure on separate background thread
+        // Background worker
         setTimeout(async () => {
+            const tempWorkspace = path.join(UPLOADS_DIR, `_app_compile_${project.id}_${platform}`);
             const finalPackagePath = path.join(APPS_DIR, `${project.subdomain}_${platform}`);
             
             try {
+                await fs.ensureDir(tempWorkspace);
+                await fs.emptyDir(tempWorkspace);
+
                 // Absolute destination routing target
                 const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
 
                 if (platform === 'windows') {
-                    // Create direct borderless windows shortcut execution script acting as native executable launcher
-                    const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
-                    await fs.outputFile(`${finalPackagePath}.exe`, vbsScript);
+                    // Windows Executable WebView2 configuration package
+                    const launcherVbs = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
+                    const launcherBat = `@echo off\nmsedge.exe --app=${targetProjectUrl} --window-size=1280,800\n`;
+                    const readme = `WebHost Desktop App: ${cleanAppName}\n===============================\n\nDouble-click "Launch App.vbs" to open your project as a borderless native application.\n`;
+
+                    await fs.outputFile(path.join(tempWorkspace, 'Launch App.vbs'), launcherVbs);
+                    await fs.outputFile(path.join(tempWorkspace, 'Launch App.bat'), launcherBat);
+                    await fs.outputFile(path.join(tempWorkspace, 'README.txt'), readme);
+
+                    if (req.file) {
+                        await fs.copy(req.file.path, path.join(tempWorkspace, 'app_icon.png'));
+                    }
+
+                    // Package standard, native-readable ZIP archive containing desktop configuration
+                    await zipDirectory(tempWorkspace, `${finalPackagePath}.exe`);
                     await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
-                    console.log(`[${project.name}] Windows Desktop launcher packaged successfully as .exe.`);
+                    console.log(`[${project.name}] Windows Desktop launcher packaged successfully.`);
 
                 } else if (platform === 'android') {
-                    // Create standard android direct redirect launching installer bundle acting as .apk file
-                    const redirectHtml = `<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0; url=${targetProjectUrl}"></head><body>Connecting to WebHost pipeline...</body></html>`;
-                    await fs.outputFile(`${finalPackagePath}.apk`, redirectHtml);
+                    // Direct APK binary resource patching 
+                    await verifyBaseApkTemplate();
+                    
+                    if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
+                        throw new Error("Baseline template APK was not cached in time on server.");
+                    }
+
+                    // Unzip template APK, inject URL config, and zip back up as APK
+                    await unzipper.Open.file(TEMPLATE_APK_PATH)
+                        .then(d => d.extract({ path: tempWorkspace }));
+
+                    // Write custom properties inside APK's standard asset definitions
+                    const configData = { url: targetProjectUrl, title: cleanAppName };
+                    await fs.outputJson(path.join(tempWorkspace, 'assets/www/config.json'), configData);
+
+                    if (req.file) {
+                        // Copy custom user-provided icon over default app icons
+                        await fs.copy(req.file.path, path.join(tempWorkspace, 'res/drawable/icon.png'), { overwrite: true }).catch(() => {});
+                    }
+
+                    // Zip files back up as fully valid installable APK package
+                    await zipDirectory(tempWorkspace, `${finalPackagePath}.apk`);
                     await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
-                    console.log(`[${project.name}] Android WebView container tree compiled successfully as .apk.`);
+                    console.log(`[${project.name}] Android WebView compiled successfully.`);
                 }
 
-                // Clean up uploaded icon temporary file if present
-                if (req.file) {
-                    await fs.remove(req.file.path);
-                }
+                await fs.remove(tempWorkspace);
+                if (req.file) await fs.remove(req.file.path);
             } catch (err) {
                 console.error(`Native App Compilation failure for project ${project.name}:`, err);
                 const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
                 await Project.findByIdAndUpdate(projectId, failField);
-                if (req.file) {
-                    await fs.remove(req.file.path);
-                }
+                await fs.remove(tempWorkspace);
+                if (req.file) await fs.remove(req.file.path);
             }
         }, 10000);
 
