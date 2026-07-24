@@ -19,17 +19,40 @@
         <div id="new-project-modal" class="modal card hidden"><h2 class="modal-title">Create a New Project</h2><form id="new-project-form"><label for="project-name">Project Name</label><input type="text" id="project-name" class="form-input" placeholder="my-awesome-site" required><p class="form-hint">This will be used to create the URL path. e.g., /my-awesome-site-xyz</p><div class="modal-actions"><button type="button" class="btn" data-close-modal>Cancel</button><button type="submit" class="btn btn-primary">Create Project</button></div></form></div>
         <div id="deploy-modal" class="modal card hidden"><h2 class="modal-title">Deploy to "<span id="deploy-project-name"></span>"</h2><form id="deploy-form"><input type="hidden" id="deploy-project-id"><div class="deploy-tabs"><div class="deploy-tab active" data-tab="github"><i class="fab fa-github"></i> From GitHub</div><div class="deploy-tab" data-tab="upload"><i class="fas fa-file-zipper"></i> From .zip</div></div>
         <div id="github-deploy-view" class="deploy-view active">
-            <label for="git-url">Git Repository URL</label>
-            <input type="url" id="git-url" class="form-input" placeholder="https://github.com/user/repo.git">
-            <p class="form-hint">Your repo must contain a pre-built static folder (e.g., `dist`, `build`, or `public`).</p>
+            <!-- Repo Selector Container (Active if user has a PAT saved) -->
+            <div id="repo-select-container" class="hidden" style="margin-bottom: 15px;">
+                <label for="repo-select">Select GitHub Repository</label>
+                <div style="display: flex; gap: 8px;">
+                    <select id="repo-select" class="form-input" style="flex: 1; margin-bottom: 0;"></select>
+                    <button type="button" id="toggle-manual-btn" class="btn btn-secondary" style="white-space: nowrap;">Or Enter URL</button>
+                </div>
+            </div>
+
+            <!-- Manual URL Input Container (Fallback/Toggle option) -->
+            <div id="manual-url-container" style="margin-bottom: 15px;">
+                <label for="git-url">Public/Private Git Repository URL</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="url" id="git-url" class="form-input" placeholder="https://github.com/user/repo.git" style="flex: 1; margin-bottom: 0;">
+                    <button type="button" id="toggle-select-btn" class="btn btn-secondary hidden" style="white-space: nowrap;">Select Repo</button>
+                </div>
+                <p class="form-hint">Your repo must contain your static production files.</p>
+            </div>
+
+            <!-- Root Directory Selector -->
+            <div style="margin-bottom: 15px;">
+                <label for="root-dir">Root Directory (Optional)</label>
+                <input type="text" id="root-dir" class="form-input" placeholder="e.g. dist, build, or leave empty">
+                <p class="form-hint">The folder inside your repository containing your compiled static files. If blank, WebHost searches for 'dist', 'build', 'public', or 'out' automatically.</p>
+            </div>
             
+            <!-- Personal Access Token Configuration -->
             <div class="pat-container" style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
                 <label for="github-pat">GitHub Personal Access Token (PAT)</label>
                 <div style="display: flex; gap: 8px; margin-top: 5px;">
                     <input type="password" id="github-pat" class="form-input" placeholder="ghp_XXXXXXXXXXXXXXXXXXXX" style="margin-bottom: 0; flex: 1;">
                     <button type="button" id="save-pat-btn" class="btn btn-secondary" style="white-space: nowrap;">Save Token</button>
                 </div>
-                <p class="form-hint">Required to deploy private repositories. Saving it will store it securely on your account.</p>
+                <p class="form-hint">Required to fetch private repositories. Token is stored securely to your account profile.</p>
             </div>
         </div>
         <div id="upload-deploy-view" class="deploy-view"><label for="zip-file">Upload a .zip file of your site</label><input type="file" id="zip-file" class="form-input" accept=".zip"><p class="form-hint">Zip the contents of your build folder (e.g., `dist`) and upload it here.</p></div><div class="modal-actions"><button type="button" class="btn" data-close-modal>Cancel</button><button type="submit" class="btn btn-success">Start Deployment</button></div></form></div>
@@ -46,29 +69,103 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalBackdrop = document.getElementById('modal-backdrop');
     const toast = document.getElementById('toast-notification');
     
+    let hasSavedPat = false;
+
     const apiFetch = async (endpoint, options = {}) => { const res = await fetch(`${API_BASE_URL}/api${endpoint}`, { ...options, headers: { 'Authorization': `Bearer ${token}`, ...options.headers }, }); if (res.status === 401) { localStorage.removeItem('token'); window.location.replace('/index.html'); throw new Error('Session expired. Please log in again.'); } if (res.status === 204) { return; } const data = await res.json(); if (!res.ok) throw new Error(data.message); return data; };
     
-    const fetchAndRenderProjects = async () => { try { loadingState.style.display = 'block'; projectsList.innerHTML = ''; const projects = await apiFetch('/projects'); loadingState.style.display = 'none'; if (projects.length === 0) { projectsList.innerHTML = `<p class="text-center" style="grid-column: 1 / -1;">You haven't created any projects yet. Click 'New Project' to get started!</p>`; } else { projects.forEach(project => { const projectCard = document.createElement('div'); projectCard.className = 'card project-card'; projectCard.setAttribute('id', `project-card-${project._id}`); projectCard.innerHTML = `<h3>${project.name}</h3><a href="/${project.subdomain}" target="_blank" rel="noopener noreferrer" class="project-url">${DOMAIN_NAME}/${project.subdomain} <i class="fas fa-external-link-alt"></i></a><div class="project-status">Status: <span class="status-badge ${project.status}">${project.status}</span></div><div class="project-actions"><button class="btn btn-danger delete-btn" data-id="${project._id}" data-name="${project.name}"><i class="fas fa-trash"></i> Delete</button><button class="btn btn-success deploy-btn" data-id="${project._id}" data-name="${project.name}"><i class="fas fa-rocket"></i> Deploy</button></div>`; projectsList.appendChild(projectCard); }); } } catch (error) { showToast(error.message, 'error'); loadingState.style.display = 'none'; } };
+    const fetchAndRenderProjects = async () => { try { loadingState.style.display = 'block'; projectsList.innerHTML = ''; const projects = await apiFetch('/projects'); loadingState.style.display = 'none'; if (projects.length === 0) { projectsList.innerHTML = `<p class="text-center" style="grid-column: 1 / -1;">You haven't created any projects yet. Click 'New Project' to get started!</p>`; } else { projects.forEach(project => { const projectCard = document.createElement('div'); projectCard.className = 'card project-card'; projectCard.setAttribute('id', `project-card-${project._id}`); projectCard.innerHTML = `<h3>${project.name}</h3><a href="/${project.subdomain}" target="_blank" rel="noopener noreferrer" class="project-url">${DOMAIN_NAME}/${project.subdomain} <i class="fas fa-external-link-alt"></i></a><div class="project-status">Status: <span class="status-badge ${project.status}">${project.status}</span></div><div class="project-actions"><button class="btn btn-danger delete-btn" data-id="${project._id}" data-name="${project.name}"><i class="fas fa-trash"></i> Delete</button><button class="btn btn-success deploy-btn" data-id="${project._id}" data-name="${project.name}" data-root-dir="${project.rootDir || ''}"><i class="fas fa-rocket"></i> Deploy</button></div>`; projectsList.appendChild(projectCard); }); } } catch (error) { showToast(error.message, 'error'); loadingState.style.display = 'none'; } };
     
-    // NEW: Fetch and populate saved GitHub PAT
+    // Load Token Status and set visibility
     const loadSavedPat = async () => {
         try {
             const data = await apiFetch('/user/pat');
             if (data && data.pat) {
                 document.getElementById('github-pat').value = data.pat;
+                hasSavedPat = true;
+                document.getElementById('toggle-select-btn').classList.remove('hidden');
+            } else {
+                hasSavedPat = false;
+                document.getElementById('toggle-select-btn').classList.add('hidden');
             }
         } catch (error) {
             console.error("Failed to load saved PAT:", error);
         }
     };
 
+    // Load Repositories using the Token
+    const loadUserRepos = async () => {
+        const repoSelect = document.getElementById('repo-select');
+        const repoSelectContainer = document.getElementById('repo-select-container');
+        const manualUrlContainer = document.getElementById('manual-url-container');
+        try {
+            repoSelect.innerHTML = '<option value="">Loading repositories...</option>';
+            repoSelectContainer.classList.remove('hidden');
+            manualUrlContainer.classList.add('hidden');
+
+            const repos = await apiFetch('/user/repos');
+            repoSelect.innerHTML = '<option value="">-- Select a Repository --</option>';
+            repos.forEach(repo => {
+                const opt = document.createElement('option');
+                opt.value = repo.clone_url;
+                opt.textContent = `${repo.name} ${repo.private ? '(Private)' : '(Public)'}`;
+                repoSelect.appendChild(opt);
+            });
+        } catch (err) {
+            console.error("Could not load repos automatically:", err.message);
+            // Revert back to manual URL input on failure
+            repoSelectContainer.classList.add('hidden');
+            manualUrlContainer.classList.remove('hidden');
+        }
+    };
+
     const showModal = (modal) => { document.getElementById('modal-backdrop').classList.remove('hidden'); modal.classList.remove('hidden'); }; const hideModals = () => { document.getElementById('modal-backdrop').classList.add('hidden'); document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden')); };
     document.getElementById('new-project-btn').addEventListener('click', () => showModal(document.getElementById('new-project-modal'))); document.getElementById('modal-backdrop').addEventListener('click', (e) => { if (e.target.id === 'modal-backdrop' || e.target.closest('[data-close-modal]')) { hideModals(); } });
     document.getElementById('new-project-form').addEventListener('submit', async (e) => { e.preventDefault(); const btn = e.target.querySelector('button[type="submit"]'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; try { await apiFetch('/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: document.getElementById('project-name').value }), }); showToast('Project created successfully!', 'success'); hideModals(); e.target.reset(); fetchAndRenderProjects(); } catch (error) { showToast(error.message, 'error'); } finally { btn.disabled = false; btn.innerHTML = 'Create Project'; } });
-    projectsList.addEventListener('click', async (e) => { const deployBtn = e.target.closest('.deploy-btn'); const deleteBtn = e.target.closest('.delete-btn'); if (deployBtn) { document.getElementById('deploy-project-name').textContent = deployBtn.dataset.name; document.getElementById('deploy-project-id').value = deployBtn.dataset.id; showModal(document.getElementById('deploy-modal')); } if (deleteBtn) { if (confirm(`Are you sure you want to permanently delete the project "${deleteBtn.dataset.name}"?`)) { try { await apiFetch(`/projects/${deleteBtn.dataset.id}`, { method: 'DELETE' }); showToast('Project deleted.', 'success'); document.getElementById(`project-card-${deleteBtn.dataset.id}`).remove(); } catch (error) { showToast(`Error: ${error.message}`, 'error'); } } } });
+    
+    projectsList.addEventListener('click', async (e) => { 
+        const deployBtn = e.target.closest('.deploy-btn'); 
+        const deleteBtn = e.target.closest('.delete-btn'); 
+        if (deployBtn) { 
+            document.getElementById('deploy-project-name').textContent = deployBtn.dataset.name; 
+            document.getElementById('deploy-project-id').value = deployBtn.dataset.id; 
+            document.getElementById('root-dir').value = deployBtn.dataset.rootDir || '';
+            showModal(document.getElementById('deploy-modal')); 
+            
+            if (hasSavedPat) {
+                loadUserRepos();
+            } else {
+                document.getElementById('repo-select-container').classList.add('hidden');
+                document.getElementById('manual-url-container').classList.remove('hidden');
+            }
+        } 
+        if (deleteBtn) { 
+            if (confirm(`Are you sure you want to permanently delete the project "${deleteBtn.dataset.name}"?`)) { 
+                try { 
+                    await apiFetch(`/projects/${deleteBtn.dataset.id}`, { method: 'DELETE' }); 
+                    showToast('Project deleted.', 'success'); 
+                    document.getElementById(`project-card-${deleteBtn.dataset.id}`).remove(); 
+                } catch (error) { 
+                    showToast(`Error: ${error.message}`, 'error'); 
+                } 
+            } 
+        } 
+    });
+    
     document.querySelectorAll('.deploy-tab').forEach(tab => { tab.addEventListener('click', () => { document.querySelectorAll('.deploy-tab').forEach(t => t.classList.remove('active')); document.querySelectorAll('.deploy-view').forEach(v => v.classList.remove('active')); tab.classList.add('active'); document.getElementById(`${tab.dataset.tab}-deploy-view`).classList.add('active'); }); });
     
-    // NEW: Handle Saving Personal Access Token (PAT)
+    // Toggle View Events
+    document.getElementById('toggle-manual-btn').addEventListener('click', () => {
+        document.getElementById('repo-select-container').classList.add('hidden');
+        document.getElementById('manual-url-container').classList.remove('hidden');
+        document.getElementById('repo-select').value = '';
+    });
+
+    document.getElementById('toggle-select-btn').addEventListener('click', () => {
+        document.getElementById('git-url').value = '';
+        loadUserRepos();
+    });
+
+    // Save Personal Access Token (PAT)
     document.getElementById('save-pat-btn').addEventListener('click', async () => {
         const btn = document.getElementById('save-pat-btn');
         const pat = document.getElementById('github-pat').value;
@@ -81,6 +178,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ pat }),
             });
             showToast('GitHub PAT saved successfully!', 'success');
+            await loadSavedPat();
+            if (hasSavedPat) {
+                loadUserRepos();
+            }
         } catch (error) {
             showToast(error.message, 'error');
         } finally {
@@ -89,13 +190,61 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('deploy-form').addEventListener('submit', async (e) => { e.preventDefault(); const btn = e.target.querySelector('button[type="submit"]'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Deploying...'; try { const formData = new FormData(); formData.append('projectId', document.getElementById('deploy-project-id').value); const gitUrl = document.getElementById('git-url').value; const file = document.getElementById('zip-file').files[0]; if (gitUrl) { formData.append('gitURL', gitUrl); } else if (file) { formData.append('file', file); } else { throw new Error('Please provide a Git URL or a .zip file.'); } const res = await fetch(`${API_BASE_URL}/api/deploy`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: formData, }); if(!res.ok) { const errData = await res.json(); throw new Error(errData.message); } showToast('Deployment started!', 'success'); hideModals(); e.target.reset(); setTimeout(fetchAndRenderProjects, 3000); } catch (error) { showToast(error.message, 'error'); } finally { btn.disabled = false; btn.innerHTML = 'Start Deployment'; } });
+    document.getElementById('deploy-form').addEventListener('submit', async (e) => { 
+        e.preventDefault(); 
+        const btn = e.target.querySelector('button[type="submit"]'); 
+        btn.disabled = true; 
+        btn.innerHTML = '<span class="spinner"></span> Deploying...'; 
+        try { 
+            const formData = new FormData(); 
+            formData.append('projectId', document.getElementById('deploy-project-id').value); 
+            
+            // Get root directory parameter
+            const rootDirVal = document.getElementById('root-dir').value;
+            formData.append('rootDir', rootDirVal);
+
+            // Determine if using Dropdown select or manual Git URL
+            const repoSelectVal = document.getElementById('repo-select').value;
+            const gitUrlVal = document.getElementById('git-url').value;
+            const file = document.getElementById('zip-file').files[0]; 
+            
+            if (repoSelectVal) { 
+                formData.append('gitURL', repoSelectVal); 
+            } else if (gitUrlVal) { 
+                formData.append('gitURL', gitUrlVal); 
+            } else if (file) { 
+                formData.append('file', file); 
+            } else { 
+                throw new Error('Please select a repository, enter a Git URL, or upload a .zip file.'); 
+            } 
+            
+            const res = await fetch(`${API_BASE_URL}/api/deploy`, { 
+                method: 'POST', 
+                headers: { 'Authorization': `Bearer ${token}` }, 
+                body: formData, 
+            }); 
+            if(!res.ok) { 
+                const errData = await res.json(); 
+                throw new Error(errData.message); 
+            } 
+            showToast('Deployment started!', 'success'); 
+            hideModals(); 
+            e.target.reset(); 
+            setTimeout(fetchAndRenderProjects, 3000); 
+        } catch (error) { 
+            showToast(error.message, 'error'); 
+        } finally { 
+            btn.disabled = false; 
+            btn.innerHTML = 'Start Deployment'; 
+        } 
+    });
+    
     document.getElementById('logout-btn').addEventListener('click', () => { localStorage.removeItem('token'); window.location.replace('/index.html'); });
     function showToast(message, type = 'success') { if (!toast) return; toast.textContent = message; toast.className = `toast-notification ${type} show`; setTimeout(() => { toast.classList.remove('show'); }, 4000); }
     
-    // Initialize Dashboard
+    // Initial loads
     fetchAndRenderProjects();
-    loadSavedPat(); // Load saved token on initialization
+    loadSavedPat(); 
 });
 </script>
 </body>

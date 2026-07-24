@@ -46,7 +46,8 @@ const ProjectSchema = new mongoose.Schema({
     name: { type: String, required: true }, 
     subdomain: { type: String, required: true, unique: true }, 
     owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, 
-    status: { type: String, enum: ['queued', 'deploying', 'ready', 'failed'], default: 'queued' } 
+    status: { type: String, enum: ['queued', 'deploying', 'ready', 'failed'], default: 'queued' },
+    rootDir: { type: String, default: '' } // Stores configured deployment folder
 }, { timestamps: true });
 
 const Project = mongoose.model('Project', ProjectSchema);
@@ -144,6 +145,40 @@ app.post('/api/user/pat', authMiddleware, async (req, res) => {
     }
 });
 
+// FETCH GITHUB REPOSITORIES FOR THE USER
+app.get('/api/user/repos', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user || !user.githubPat) {
+            return res.status(400).json({ message: 'GitHub Personal Access Token not configured.' });
+        }
+        
+        const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+            headers: {
+                'Authorization': `Bearer ${user.githubPat}`,
+                'User-Agent': 'WebHost-Platform'
+            }
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            return res.status(response.status).json({ message: `GitHub API error: ${errText}` });
+        }
+
+        const repos = await response.json();
+        const simplifiedRepos = repos.map(repo => ({
+            name: repo.full_name,
+            clone_url: repo.clone_url,
+            private: repo.private
+        }));
+
+        res.json(simplifiedRepos);
+    } catch (error) {
+        console.error("Fetch User Repos Error:", error);
+        res.status(500).json({ message: 'Server error fetching user repositories.' });
+    }
+});
+
 app.post('/api/projects', authMiddleware, async (req, res) => { 
     try { 
         const { name } = req.body; 
@@ -196,14 +231,17 @@ app.delete('/api/projects/:id', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) => { 
-    const { projectId, gitURL } = req.body; 
+    const { projectId, gitURL, rootDir } = req.body; 
     let project; 
     try { 
         project = await Project.findById(projectId); 
         if (!project || project.owner.toString() !== req.user.id) { 
             return res.status(404).json({ message: 'Project not found or you are not the owner.' }); 
         } 
-        await project.updateOne({ status: 'deploying' }); 
+        
+        // Update root directory settings if provided
+        const normalizedRootDir = rootDir !== undefined ? rootDir.trim() : project.rootDir;
+        await project.updateOne({ status: 'deploying', rootDir: normalizedRootDir }); 
         console.log(`[${project.name}] --> Deployment started.`); 
         res.status(202).json({ message: 'Deployment accepted and is in progress.' }); 
         
@@ -233,9 +271,23 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
             await simpleGit().clone(cloneURL, tempCloneDir, { '--depth': 1 }); 
             console.log(`[${project.name}] ... Git clone successful.`); 
             
-            const buildDir = await findBuildDir(tempCloneDir); 
-            console.log(`[${project.name}] STEP 3: Found build directory at: ${buildDir}`); 
-            await fs.copy(buildDir, projectDeployPath); 
+            // Determine source path with root folder configurations and path traversal protection
+            let sourceDir = tempCloneDir;
+            if (normalizedRootDir) {
+                const resolvedPath = path.resolve(tempCloneDir, normalizedRootDir);
+                if (!resolvedPath.startsWith(tempCloneDir)) {
+                    throw new Error("Security Violation: Invalid Root Directory path escaping scope.");
+                }
+                sourceDir = resolvedPath;
+                if (!(await fs.pathExists(sourceDir))) {
+                    throw new Error(`The configured root directory '${normalizedRootDir}' does not exist inside the repository.`);
+                }
+            } else {
+                sourceDir = await findBuildDir(tempCloneDir); 
+            }
+            
+            console.log(`[${project.name}] STEP 3: Deploying from directory: ${sourceDir}`); 
+            await fs.copy(sourceDir, projectDeployPath); 
             console.log(`[${project.name}] STEP 4: Copied files to final deployment directory.`); 
             await fs.remove(tempCloneDir); 
         } else if (req.file) { 
