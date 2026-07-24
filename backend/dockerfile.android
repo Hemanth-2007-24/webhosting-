@@ -1,0 +1,38 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    openjdk-17-jdk \
+    curl \
+    unzip \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up Android SDK paths
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools
+
+# Download Android Command-line Tools
+RUN mkdir -p $ANDROID_SDK_ROOT/cmdline-tools && \
+    curl -o /tmp/cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip && \
+    unzip /tmp/cmdline-tools.zip -d $ANDROID_SDK_ROOT/cmdline-tools && \
+    mv $ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest && \
+    rm /tmp/cmdline-tools.zip
+
+# Accept SDK licenses & install platforms/build tools
+RUN yes | sdkmanager --licenses && \
+    sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+
+WORKDIR /workspace
+
+# Pre-cache Gradle
+RUN curl -L -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.0-bin.zip && \
+    mkdir /opt/gradle && \
+    unzip -d /opt/gradle /tmp/gradle.zip && \
+    rm /tmp/gradle.zip
+ENV PATH=$PATH:/opt/gradle/gradle-8.0/bin
+
+CMD ["gradle", "-v"]
