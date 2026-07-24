@@ -561,7 +561,7 @@ app.post('/api/build-app-direct', authMiddleware, upload.single('icon'), async (
     }
 });
 
-// --- DOWNLOAD DIRECTLY COMPILED NATIVE APP PACKAGES ---
+// --- DOWNLOAD DIRECTLY COMPILED NATIVE APP PACKAGES WITH CUSTOM USER FILENAMES ---
 app.get('/api/download-app-direct/:filename/:platform', async (req, res) => {
     const { filename, platform } = req.params;
     const extension = platform === 'android' ? '.apk' : '.vbs';
@@ -571,10 +571,14 @@ app.get('/api/download-app-direct/:filename/:platform', async (req, res) => {
         return res.status(404).send('Compiled application binary package was not found.');
     }
 
-    res.download(absoluteFilePath, `compiled_launcher${extension}`);
+    // Sanitize and use custom name if passed in query parameters
+    const customAppName = req.query.name || 'compiled_launcher';
+    const cleanDownloadName = customAppName.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+    
+    res.download(absoluteFilePath, `${cleanDownloadName}${extension}`);
 });
 
-// --- DOWNLOAD COMPILED NATIVE APP PACKAGES ---
+// --- DOWNLOAD COMPILED NATIVE APP PACKAGES WITH CUSTOM INSTANCE APP FILENAMES ---
 app.get('/api/projects/:id/download-app/:platform', async (req, res) => {
     const projectId = req.params.id;
     const platform = req.params.platform;
@@ -594,8 +598,11 @@ app.get('/api/projects/:id/download-app/:platform', async (req, res) => {
             return res.status(404).send('Compiled application binary package was not found.');
         }
 
-        const downloadName = `${project.subdomain}_launcher${extension}`;
-        res.download(absoluteFilePath, downloadName);
+        // Sanitize and use the specific appName or projectName configured on project card
+        const customAppName = project.appName || project.name;
+        const cleanDownloadName = customAppName.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+
+        res.download(absoluteFilePath, `${cleanDownloadName}${extension}`);
     } catch (err) {
         console.error("Download delivery failure:", err);
         res.status(500).send('Server Error.');

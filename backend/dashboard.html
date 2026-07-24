@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - WebHost</title>
+    <title>Dashboard - O4D</title>
     <meta name="robots" content="noindex, nofollow">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -71,7 +71,7 @@
     <header class="sticky top-0 z-50 w-full bg-bg-dark/75 backdrop-blur-xl border-b border-white/[0.06] h-16 flex items-center justify-between px-6 box-border">
         <div class="flex items-center gap-8">
             <a href="/" class="font-display font-extrabold text-xl tracking-tight bg-gradient-to-r from-white to-indigo-400 bg-clip-text text-transparent flex items-center gap-2">
-                <i class="fa-solid fa-cloud-lightning text-indigo-400"></i> WebHost
+                <i class="fa-solid fa-cloud-lightning text-indigo-400"></i> O4D
             </a>
             <div class="hidden md:flex gap-1">
                 <button id="nav-dash" class="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/[0.02]">Dashboard</button>
@@ -88,7 +88,7 @@
         <!-- Welcome Jumbotron Hero -->
         <div class="bg-gradient-to-r from-slate-900/60 to-slate-800/20 border border-white/[0.05] p-8 sm:p-10 rounded-[28px] shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div class="space-y-2">
-                <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">My Projects Dashboard</h2>
+                <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">Projects Dashboard</h2>
                 <p class="text-slate-400 text-sm max-w-lg">Provision sandboxed containers on Edge caching clusters. Deploy safely from private Git streams.</p>
             </div>
             <div class="flex gap-3">
@@ -318,15 +318,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return data; 
     };
 
-    const fetchAndRenderProjects = async () => { 
+    const fetchAndRenderProjects = async (isSilent = false) => { 
         try { 
-            // Injected dynamic loading indicator safely inside the target element before rendering
-            projectsList.innerHTML = `
-                <div id="dynamic-loader" class="text-center py-12 col-span-full">
-                    <i class="fa-solid fa-spinner animate-spin text-3xl text-indigo-400 mb-2"></i>
-                    <p class="text-slate-400 text-sm">Loading provisioned containers...</p>
-                </div>
-            `; 
+            // Injected dynamic loading indicator safely inside the target element before rendering only if NOT in silent background update mode
+            if (!isSilent) {
+                projectsList.innerHTML = `
+                    <div id="dynamic-loader" class="text-center py-12 col-span-full">
+                        <i class="fa-solid fa-spinner animate-spin text-3xl text-indigo-400 mb-2"></i>
+                        <p class="text-slate-400 text-sm">Loading provisioned containers...</p>
+                    </div>
+                `; 
+            }
             const projects = await apiFetch('/projects'); 
             projectsList.innerHTML = ''; // Cleanly clear loading indicator
             if (!projects || projects.length === 0) { 
@@ -337,7 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     card.className = 'project-card-elem glass-card p-6 rounded-[24px] hover:border-white/[0.15] hover:translate-y-[-2px] transition-all flex flex-col justify-between gap-4'; 
                     card.setAttribute('id', `project-card-${project._id}`); 
 
-                    // Render direct local app bundle download buttons if project has completed builds
+                    // Render direct local app bundle download buttons if project has completed builds (updated download links with custom appName query parameter)
                     let appDownloadsHTML = '';
                     if (project.appAndroidStatus === 'ready' || project.appWindowsStatus === 'ready') {
                         appDownloadsHTML = `
@@ -720,13 +722,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const data = await res.json();
             
-            // Build timeout tracking overlay loop
+            // Build timeout tracking overlay loop (passing custom appName as query parameter)
             setTimeout(() => {
+                const customDownloadUrl = `${data.downloadUrl}?name=${encodeURIComponent(appName)}`;
                 statusDiv.innerHTML = `
                     <div class="flex items-center gap-2 text-emerald-400 font-bold">
                         <i class="fa-solid fa-circle-check"></i> WebView package compilation successful!
                     </div>
-                    <a href="${data.downloadUrl}" class="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-white rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1.5 shadow-lg">
+                    <a href="${customDownloadUrl}" class="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-white rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1.5 shadow-lg">
                         <i class="fa-solid fa-cloud-arrow-down"></i> Download ${platform === 'android' ? '.APK' : '.VBS'}
                     </a>
                 `;
@@ -748,7 +751,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.replace('/index.html'); 
     });
     
-    document.getElementById('sync-btn').addEventListener('click', fetchAndRenderProjects);
+    document.getElementById('sync-btn').addEventListener('click', () => fetchAndRenderProjects(false));
 
     function showToast(message, type = 'success') {
         if (!toast) return;
@@ -766,10 +769,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initialize Dashboard
-    fetchAndRenderProjects();
+    fetchAndRenderProjects(false);
     loadSavedPat(); 
     
-    // Auto status poller: Watches the DOM for ongoing builds and updates until completion
+    // Auto status poller: Watches the DOM for ongoing builds and updates silently without flashing loader
     setInterval(async () => {
         try {
             // Detect if any project card is currently showing an active loading state in the DOM
@@ -777,7 +780,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                              document.querySelector('.status-badge.deploying, .status-badge.queued') !== null;
             
             if (isUIRenderingActiveBuild) {
-                await fetchAndRenderProjects();
+                await fetchAndRenderProjects(true); // Run silent updates
             }
         } catch (e) {
             console.error("Sync poller failure:", e);
