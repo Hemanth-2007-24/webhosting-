@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - O4D</title>
+    <title>Dashboard - WebHost</title>
     <meta name="robots" content="noindex, nofollow">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -169,7 +169,7 @@
                         <a href="/downloads/webhost.apk" class="flex items-center justify-center gap-2 p-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/35 text-emerald-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
                             <i class="fa-brands fa-android text-base"></i> Android APK
                         </a>
-                        <a href="/downloads/webhost-setup.exe" class="flex items-center justify-center gap-2 p-3.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/35 text-cyan-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
+                        <a href="/downloads/webhost-setup.exe" class="flex items-center justify-center gap-2 p-3.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 border-cyan-500/35 text-cyan-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
                             <i class="fa-brands fa-windows text-base"></i> Windows EXE
                         </a>
                     </div>
@@ -285,7 +285,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const DOMAIN_NAME = window.location.origin;
     
     const projectsList = document.getElementById('projects-list');
-    const loadingState = document.getElementById('loading-state');
     const backdrop = document.getElementById('modal-backdrop');
     const toast = document.getElementById('toast-notification');
     const patSection = document.getElementById('pat-config-section');
@@ -321,10 +320,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const fetchAndRenderProjects = async () => { 
         try { 
-            loadingState.classList.remove('hidden'); 
-            projectsList.innerHTML = ''; 
+            // Injected dynamic loading indicator safely inside the target element before rendering
+            projectsList.innerHTML = `
+                <div id="dynamic-loader" class="text-center py-12 col-span-full">
+                    <i class="fa-solid fa-spinner animate-spin text-3xl text-indigo-400 mb-2"></i>
+                    <p class="text-slate-400 text-sm">Loading provisioned containers...</p>
+                </div>
+            `; 
             const projects = await apiFetch('/projects'); 
-            loadingState.classList.add('hidden'); 
+            projectsList.innerHTML = ''; // Cleanly clear loading indicator
             if (!projects || projects.length === 0) { 
                 projectsList.innerHTML = `<p id="no-projects-text" class="text-center py-12 col-span-full text-slate-500 font-medium">No project containers initiated yet.</p>`; 
             } else { 
@@ -378,7 +382,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } 
         } catch (error) { 
             showToast(error.message, 'error'); 
-            loadingState.classList.add('hidden'); 
+            projectsList.innerHTML = `<p class="text-center py-12 col-span-full text-red-400 font-medium">Failed to retrieve containers.</p>`;
         } 
     };
 
