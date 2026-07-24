@@ -128,6 +128,33 @@ async function findIndexHtmlDir(basePath) {
     return basePath; 
 }
 
+// --- PURE JS ZIP UTILITY COMPILER ---
+function zipDirectory(sourceDir, outPath) {
+    return new Promise((resolve, reject) => {
+        const output = fs.createWriteStream(outPath);
+        const archive = archiver('zip', { zlib: { level: 9 } });
+
+        output.on('close', () => {
+            console.log(`[ZIPPER] Successfully packaged files. Size: ${archive.pointer()} bytes.`);
+            resolve();
+        });
+
+        archive.on('warning', (err) => {
+            if (err.code === 'ENOENT') {
+                console.warn('[ZIPPER_WARN]', err);
+            } else {
+                reject(err);
+            }
+        });
+
+        archive.on('error', (err) => reject(err));
+
+        archive.pipe(output);
+        archive.directory(sourceDir, false); 
+        archive.finalize();
+    });
+}
+
 // --- INITIALIZE GENERIC ANDROID WEBVIEW TEMPLATE APK ---
 const TEMPLATE_APK_PATH = path.join(APPS_DIR, 'webview_base_template.apk');
 async function verifyBaseApkTemplate() {
@@ -423,7 +450,7 @@ app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), a
         const updateField = platform === 'android' ? { appAndroidStatus: 'building', appName: cleanAppName } : { appWindowsStatus: 'building', appName: cleanAppName };
         await Project.findByIdAndUpdate(projectId, updateField);
 
-        console.log(`[${project.name}] --> Starting WebView binary packaging for: ${platform}`);
+        console.log(`[${project.name}] --> Compiling borderless native WebView container for: ${platform}`);
         res.status(202).json({ message: 'Native WebView compilation sequence active.' });
 
         // Background compile task
@@ -476,6 +503,71 @@ app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), a
         console.error("App Build Request failure:", err);
         res.status(500).json({ message: 'Internal Server Error.' });
     }
+});
+
+// --- D_I_R_E_C_T WEB-TO-APP STANDALONE CONVERTER ROUTE ---
+app.post('/api/build-app-direct', authMiddleware, upload.single('icon'), async (req, res) => {
+    const { url, platform, appName } = req.body;
+
+    if (!url || !platform || !appName) {
+        return res.status(400).json({ message: 'Missing app compiling parameters.' });
+    }
+
+    const cleanAppName = appName.trim();
+    if (cleanAppName.length < 2) {
+        return res.status(400).json({ message: 'Application name is too short.' });
+    }
+
+    const appFilename = `direct_${cuid()}_${platform}`;
+    const finalPackagePath = path.join(APPS_DIR, appFilename);
+
+    try {
+        console.log(`[DIRECT_BUILD] --> Compiling native WebView wrapper directly for URL: ${url}`);
+
+        if (platform === 'windows') {
+            const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${url} --window-size=1280,800", 0, false\n`;
+            await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
+            console.log(`[DIRECT_BUILD] Direct VBScript launcher packaged successfully.`);
+        } else if (platform === 'android') {
+            await verifyBaseApkTemplate();
+            
+            if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
+                throw new Error("Baseline template APK was not cached on server.");
+            }
+
+            // Pure binary byte appending (Avoids ZIP/unzipper parsing locks)
+            const baseApkBuffer = await fs.readFile(TEMPLATE_APK_PATH);
+            const configMarker = `[URL_START]${url}[URL_END][TITLE_START]${cleanAppName}[TITLE_END]`;
+            const patchedBuffer = Buffer.concat([baseApkBuffer, Buffer.from(configMarker, 'utf8')]);
+
+            await fs.writeFile(`${finalPackagePath}.apk`, patchedBuffer);
+            console.log(`[DIRECT_BUILD] Direct Android WebView APK compiled successfully.`);
+        }
+
+        if (req.file) {
+            await fs.remove(req.file.path);
+        }
+
+        const downloadUrl = `/api/download-app-direct/${appFilename}/${platform}`;
+        res.json({ downloadUrl });
+    } catch (err) {
+        console.error("Direct app compilation failure:", err);
+        if (req.file) await fs.remove(req.file.path);
+        res.status(500).json({ message: 'App compilation pipeline failed.' });
+    }
+});
+
+// --- DOWNLOAD DIRECTLY COMPILED NATIVE APP PACKAGES ---
+app.get('/api/download-app-direct/:filename/:platform', async (req, res) => {
+    const { filename, platform } = req.params;
+    const extension = platform === 'android' ? '.apk' : '.vbs';
+    const absoluteFilePath = path.join(APPS_DIR, filename + extension);
+
+    if (!(await fs.pathExists(absoluteFilePath))) {
+        return res.status(404).send('Compiled application binary package was not found.');
+    }
+
+    res.download(absoluteFilePath, `compiled_launcher${extension}`);
 });
 
 // --- DOWNLOAD COMPILED NATIVE APP PACKAGES ---
