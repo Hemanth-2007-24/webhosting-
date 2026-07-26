@@ -70,8 +70,8 @@
     <!-- Header navigation -->
     <header class="sticky top-0 z-50 w-full bg-bg-dark/75 backdrop-blur-xl border-b border-white/[0.06] h-16 flex items-center justify-between px-6 box-border">
         <div class="flex items-center gap-8">
-            <a href="/" class="logo flex items-center gap-2 tracking-tight">
-                WebHost
+            <a href="/" class="font-display font-extrabold text-xl tracking-tight bg-gradient-to-r from-white to-indigo-400 bg-clip-text text-transparent flex items-center gap-2">
+                <i class="fa-solid fa-cloud-lightning text-indigo-400"></i> WebHost
             </a>
             <div class="hidden md:flex gap-1">
                 <button id="nav-dash" class="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/[0.02]">Dashboard</button>
@@ -166,10 +166,10 @@
                     </div>
 
                     <div class="grid grid-cols-2 gap-3 pt-2">
-                        <a href="/downloads/webhost.apk" class="flex items-center justify-center gap-2 p-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 border-emerald-500/35 text-emerald-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
+                        <a href="/downloads/webhost.apk" class="flex items-center justify-center gap-2 p-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/35 text-emerald-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
                             <i class="fa-brands fa-android text-base"></i> Android APK
                         </a>
-                        <a href="/downloads/webhost-setup.exe" class="flex items-center justify-center gap-2 p-3.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 border-cyan-500/35 text-cyan-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
+                        <a href="/downloads/webhost-setup.exe" class="flex items-center justify-center gap-2 p-3.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/35 text-cyan-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
                             <i class="fa-brands fa-windows text-base"></i> Windows EXE
                         </a>
                     </div>
@@ -247,7 +247,7 @@
             </form>
         </div>
 
-        <!-- APP STUDIO MODAL WITH IMAGE ICON FILE UPLOADER & CUSTOM CODE EDITOR -->
+        <!-- APP STUDIO MODAL WITH IMAGE ICON FILE UPLOADER -->
         <div id="app-studio-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
             <h2 class="font-display font-extrabold text-2xl mb-2">Native App Studio</h2>
@@ -268,11 +268,6 @@
                 <div>
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Application Icon (PNG/JPG)</label>
                   <input type="file" id="app-icon-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-sm" accept="image/png, image/jpeg">
-                </div>
-                <div>
-                  <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Custom Code Injection (Optional)</label>
-                  <textarea id="app-custom-code-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white font-mono text-xs focus:outline-none focus:border-indigo-500 h-24" placeholder="// Inject Kotlin logic, extra Javascript, CSS styles or Electron main/preload snippets..."></textarea>
-                  <p class="text-[10px] text-slate-500 mt-1">Allows custom security and WebView settings.</p>
                 </div>
                 <div class="flex justify-end gap-2 pt-4">
                     <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
@@ -328,7 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Injected dynamic loading indicator safely inside the target element before rendering only if NOT in silent background update mode
             if (!isSilent) {
                 projectsList.innerHTML = `
-                    <div id="dynamic-loader" class="text-center py-12 col-span-full animate-fadeIn">
+                    <div id="dynamic-loader" class="text-center py-12 col-span-full">
                         <i class="fa-solid fa-spinner animate-spin text-3xl text-indigo-400 mb-2"></i>
                         <p class="text-slate-400 text-sm">Loading provisioned containers...</p>
                     </div>
@@ -365,26 +360,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else if (project.appAndroidStatus === 'building' || project.appWindowsStatus === 'building') {
                         badgeHTML = `<span class="status-badge queued"><i class="fa-solid fa-spinner animate-spin mr-1"></i> BUNDLING</span>`;
                     } else {
-                        badgeHTML = `<span class="status-badge ${project.status || 'ready'}">${project.status || 'ready'}</span>`;
+                        badgeHTML = `<span class="status-badge ${project.status}">${project.status}</span>`;
                     }
-
-                    // Fixed fallback ensuring subdomain never displays as 'undefined' for old database entries
-                    const cleanSubdomain = project.subdomain || (project.projectName || project.name || 'app').toLowerCase().replace(/[^a-z0-9-]/g, '');
 
                     card.innerHTML = `
                         <div class="space-y-3">
                             <div class="flex justify-between items-start">
-                                <h3 class="font-display font-extrabold text-lg truncate max-w-[150px]">${project.projectName || project.name}</h3>
+                                <h3 class="font-display font-extrabold text-lg truncate max-w-[150px]">${project.name}</h3>
                                 ${badgeHTML}
                             </div>
-                            <a href="/${cleanSubdomain}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold tracking-wide flex items-center gap-1">/${cleanSubdomain} <i class="fa-solid fa-external-link text-[10px]"></i></a>
+                            <a href="/${project.subdomain}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold tracking-wide flex items-center gap-1">/${project.subdomain} <i class="fa-solid fa-external-link text-[10px]"></i></a>
                             ${project.rootDir ? `<div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Path: <span class="text-slate-300 font-mono">${project.rootDir}</span></div>` : ''}
                             ${appDownloadsHTML}
                         </div>
                         <div class="flex flex-wrap gap-2 pt-2 border-t border-white/[0.05]">
-                            <button class="flex-1 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-xl text-xs font-semibold transition-all deploy-btn" data-id="${project._id}" data-name="${project.projectName || project.name}" data-root-dir="${project.rootDir || ''}">Deploy</button>
-                            <button class="flex-1 py-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-xl text-xs font-semibold transition-all app-studio-btn" data-id="${project._id}" data-name="${project.projectName || project.name}">App Studio</button>
-                            <button class="px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl text-xs transition-all delete-btn" data-id="${project._id}" data-name="${project.projectName || project.name}"><i class="fa-solid fa-trash"></i></button>
+                            <button class="flex-1 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-xl text-xs font-semibold transition-all deploy-btn" data-id="${project._id}" data-name="${project.name}" data-root-dir="${project.rootDir || ''}">Deploy</button>
+                            <button class="flex-1 py-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-xl text-xs font-semibold transition-all app-studio-btn" data-id="${project._id}" data-name="${project.name}">App Studio</button>
+                            <button class="px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl text-xs transition-all delete-btn" data-id="${project._id}" data-name="${project.name}"><i class="fa-solid fa-trash"></i></button>
                         </div>
                     `; 
                     projectsList.appendChild(card); 
@@ -529,12 +521,12 @@ document.addEventListener('DOMContentLoaded', () => {
         try { 
             await apiFetch('/projects', { 
                 method: 'POST', 
-                body: { projectName: document.getElementById('project-name').value }, 
+                body: { name: document.getElementById('project-name').value }, 
             }); 
             showToast('Instance launched successfully!', 'success'); 
             hideModals(); 
             e.target.reset(); 
-            fetchAndRenderProjects(false); 
+            fetchAndRenderProjects(); 
         } catch (error) { 
             showToast(error.message, 'error'); 
         } finally { 
@@ -565,15 +557,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (appStudioBtn) {
             document.getElementById('app-project-id').value = appStudioBtn.dataset.id;
             document.getElementById('app-name-input').value = appStudioBtn.dataset.name + " App";
-            
-            // Fetch and populate project's existing customCode if present
-            try {
-                const data = await apiFetch(`/project/${appStudioBtn.dataset.id}/custom-code`);
-                document.getElementById('app-custom-code-input').value = data.customCode || '';
-            } catch (err) {
-                console.error("Failed to pre-populate custom code:", err);
-            }
-            
             showModal(document.getElementById('app-studio-modal'));
         }
 
@@ -655,7 +638,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } 
     });
 
-    // Native App Builder Compilation Submission Handler (Saves customCode before compilation)
+    // Native App Builder Compilation Submission Handler
     document.getElementById('app-studio-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = e.target.querySelector('button[type="submit"]');
@@ -663,26 +646,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const platform = document.getElementById('app-platform').value;
         const appName = document.getElementById('app-name-input').value;
         const iconFile = document.getElementById('app-icon-input').files[0];
-        const customCode = document.getElementById('app-custom-code-input').value;
 
         btn.disabled = true;
         btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Compiling...';
 
+        const formData = new FormData();
+        formData.append('platform', platform);
+        formData.append('appName', appName);
+        if (iconFile) {
+            formData.append('icon', iconFile);
+        }
+
         try {
-            // First: Save the custom code to the MongoDB project document securely
-            await apiFetch(`/project/${projectId}/custom-code`, {
-                method: 'POST',
-                body: { customCode }
-            });
-
-            // Second: Trigger the compilation process with App Name and Icons
-            const formData = new FormData();
-            formData.append('platform', platform);
-            formData.append('appName', appName);
-            if (iconFile) {
-                formData.append('icon', iconFile);
-            }
-
             const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/build-app`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
@@ -694,9 +669,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(errData.message || 'App Compilation failed.');
             }
 
-            showToast('Compilation started successfully!', 'success');
+            showToast('Native app compiler compilation initialized.', 'success');
             hideModals();
-            fetchAndRenderProjects(false);
+            fetchAndRenderProjects();
         } catch (error) {
             showToast(error.message, 'error');
         } finally {
