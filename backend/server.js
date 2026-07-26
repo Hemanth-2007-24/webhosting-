@@ -15,6 +15,8 @@ const unzipper = require('unzipper');
 const fs = require('fs-extra');
 const cuid = require('cuid');
 const archiver = require('archiver');
+const AdmZip = require('adm-zip');
+const { execFile } = require('child_process');
 
 // --- APP & MIDDLEWARE SETUP ---
 const app = express();
@@ -175,6 +177,83 @@ async function ensureBaseApkTemplate() {
 
 // Trigger background download on server startup
 ensureBaseApkTemplate().catch(err => console.error("⚠️ Background template pre-fetch failed:", err.message));
+
+// --- OPTIONAL DEBUG SIGNING (only runs if a keystore + jarsigner are configured) ---
+// APKs are validated against a signature block computed over the exact file bytes.
+// Editing a signed template APK — even correctly, via a real zip writer — breaks
+// that signature, so Android will refuse to install it ("app not installed")
+// unless it gets re-signed. This project can't ship a private key, so signing is
+// optional and only kicks in if you set these env vars on your own server
+// (requires a JDK on PATH): DEBUG_KEYSTORE_PATH, DEBUG_KEYSTORE_PASS, DEBUG_KEY_ALIAS
+function signApkIfConfigured(apkPath) {
+    return new Promise((resolve) => {
+        const keystore = process.env.DEBUG_KEYSTORE_PATH;
+        const storePass = process.env.DEBUG_KEYSTORE_PASS;
+        const alias = process.env.DEBUG_KEY_ALIAS || 'androiddebugkey';
+        if (!keystore || !storePass) {
+            console.warn('[APK_SIGN] No DEBUG_KEYSTORE_PATH/DEBUG_KEYSTORE_PASS configured — APK will be left unsigned and will need manual signing (jarsigner/apksigner) before install.');
+            return resolve(false);
+        }
+        execFile('jarsigner', [
+            '-verbose',
+            '-sigalg', 'SHA256withRSA',
+            '-digestalg', 'SHA-256',
+            '-keystore', keystore,
+            '-storepass', storePass,
+            apkPath,
+            alias
+        ], (err) => {
+            if (err) {
+                console.error('[APK_SIGN] jarsigner failed, APK left unsigned:', err.message);
+                return resolve(false);
+            }
+            console.log('[APK_SIGN] APK re-signed successfully with debug keystore.');
+            resolve(true);
+        });
+    });
+}
+
+// --- REAL APK PATCHER ---
+// Unlike naively concatenating bytes onto the raw APK file (which corrupts the
+// zip's central directory and produces a file nothing can open), this opens the
+// template as an actual zip, writes the config and any user-supplied assets as
+// real entries, and re-serializes a valid archive.
+async function buildAndroidApk({ targetUrl, appName, iconFilePath, extraFilePaths, outPath }) {
+    await ensureBaseApkTemplate();
+    if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
+        throw new Error('Baseline template APK was not cached on server.');
+    }
+
+    const zip = new AdmZip(TEMPLATE_APK_PATH);
+
+    // Config the WebView shell reads at runtime (a packaged asset, not appended bytes)
+    const config = {
+        url: targetUrl,
+        title: appName,
+        generatedAt: new Date().toISOString()
+    };
+    zip.addFile('assets/webhost_config.json', Buffer.from(JSON.stringify(config, null, 2), 'utf8'));
+
+    if (iconFilePath && await fs.pathExists(iconFilePath)) {
+        const iconBuffer = await fs.readFile(iconFilePath);
+        zip.addFile('assets/webhost_icon.png', iconBuffer);
+    }
+
+    if (Array.isArray(extraFilePaths)) {
+        for (const filePath of extraFilePaths) {
+            if (!(await fs.pathExists(filePath))) continue;
+            const safeName = path.basename(filePath).replace(/[^a-zA-Z0-9._-]/g, '_');
+            const buffer = await fs.readFile(filePath);
+            zip.addFile(`assets/user_files/${safeName}`, buffer);
+        }
+    }
+
+    await fs.ensureDir(path.dirname(outPath));
+    zip.writeZip(outPath);
+
+    const signed = await signApkIfConfigured(outPath);
+    return { signed };
+}
 
 // =================================================================
 // ==                         API ROUTES                          ==
@@ -431,8 +510,10 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
 });
 
 // --- NATIVE WEBVIEW APP COMPILER ROUTE (APK CONFIG INJECTION & SILENT VBS BUNDLING) ---
-app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), async (req, res) => {
+app.post('/api/projects/:id/build-app', authMiddleware, upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'files', maxCount: 10 }]), async (req, res) => {
     const { platform, appName } = req.body;
+    const iconFile = req.files && req.files.icon ? req.files.icon[0] : null;
+    const extraFiles = (req.files && req.files.files) || [];
     const projectId = req.params.id;
 
     if (!platform || !['android', 'windows'].includes(platform)) {
@@ -472,33 +553,28 @@ app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), a
                     console.log(`[${project.name}] Windows Desktop launcher VBS compiled successfully.`);
 
                 } else if (platform === 'android') {
-                    // Inject WebView target configurations directly to baseline APK file template (using on-demand download check)
-                    await ensureBaseApkTemplate();
-                    
-                    if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
-                        throw new Error("Baseline template APK was not cached on server.");
-                    }
+                    // Proper zip-level patch — writes real entries instead of
+                    // corrupting the archive by appending raw bytes to the end.
+                    const { signed } = await buildAndroidApk({
+                        targetUrl: targetProjectUrl,
+                        appName: cleanAppName,
+                        iconFilePath: iconFile ? iconFile.path : null,
+                        extraFilePaths: extraFiles.map(f => f.path),
+                        outPath: `${finalPackagePath}.apk`
+                    });
 
-                    // Pure binary byte appending (Avoids ZIP/unzipper parsing locks)
-                    const baseApkBuffer = await fs.readFile(TEMPLATE_APK_PATH);
-                    const configMarker = `[URL_START]${targetProjectUrl}[URL_END][TITLE_START]${cleanAppName}[TITLE_END]`;
-                    const patchedBuffer = Buffer.concat([baseApkBuffer, Buffer.from(configMarker, 'utf8')]);
-
-                    await fs.writeFile(`${finalPackagePath}.apk`, patchedBuffer);
                     await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
-                    console.log(`[${project.name}] Android WebView APK compiled successfully.`);
+                    console.log(`[${project.name}] Android WebView APK compiled successfully.${signed ? '' : ' (unsigned — configure DEBUG_KEYSTORE_PATH to auto-sign)'}`);
                 }
 
-                if (req.file) {
-                    await fs.remove(req.file.path);
-                }
+                if (iconFile) await fs.remove(iconFile.path);
+                for (const f of extraFiles) await fs.remove(f.path);
             } catch (err) {
                 console.error(`Native App Compilation failure for project ${project.name}:`, err);
                 const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
                 await Project.findByIdAndUpdate(projectId, failField);
-                if (req.file) {
-                    await fs.remove(req.file.path);
-                }
+                if (iconFile) await fs.remove(iconFile.path).catch(() => {});
+                for (const f of extraFiles) await fs.remove(f.path).catch(() => {});
             }
         }, 10000);
 
@@ -509,8 +585,10 @@ app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), a
 });
 
 // --- D_I_R_E_C_T WEB-TO-APP STANDALONE CONVERTER ROUTE ---
-app.post('/api/build-app-direct', authMiddleware, upload.single('icon'), async (req, res) => {
+app.post('/api/build-app-direct', authMiddleware, upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'files', maxCount: 10 }]), async (req, res) => {
     const { url, platform, appName } = req.body;
+    const iconFile = req.files && req.files.icon ? req.files.icon[0] : null;
+    const extraFiles = (req.files && req.files.files) || [];
 
     if (!url || !platform || !appName) {
         return res.status(400).json({ message: 'Missing app compiling parameters.' });
@@ -532,31 +610,27 @@ app.post('/api/build-app-direct', authMiddleware, upload.single('icon'), async (
             await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
             console.log(`[DIRECT_BUILD] Direct VBScript launcher packaged successfully.`);
         } else if (platform === 'android') {
-            // Check and fetch baseline template APK dynamically from CDN if it is missing
-            await ensureBaseApkTemplate();
-            
-            if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
-                throw new Error("Baseline template APK was not cached on server.");
-            }
-
-            // Pure binary byte appending (Avoids ZIP/unzipper parsing locks)
-            const baseApkBuffer = await fs.readFile(TEMPLATE_APK_PATH);
-            const configMarker = `[URL_START]${url}[URL_END][TITLE_START]${cleanAppName}[TITLE_END]`;
-            const patchedBuffer = Buffer.concat([baseApkBuffer, Buffer.from(configMarker, 'utf8')]);
-
-            await fs.writeFile(`${finalPackagePath}.apk`, patchedBuffer);
-            console.log(`[DIRECT_BUILD] Direct Android WebView APK compiled successfully.`);
+            // Proper zip-level patch — see buildAndroidApk() for why raw byte
+            // appending was corrupting every APK produced by this route.
+            const { signed } = await buildAndroidApk({
+                targetUrl: url,
+                appName: cleanAppName,
+                iconFilePath: iconFile ? iconFile.path : null,
+                extraFilePaths: extraFiles.map(f => f.path),
+                outPath: `${finalPackagePath}.apk`
+            });
+            console.log(`[DIRECT_BUILD] Direct Android WebView APK compiled successfully.${signed ? '' : ' (unsigned)'}`);
         }
 
-        if (req.file) {
-            await fs.remove(req.file.path);
-        }
+        if (iconFile) await fs.remove(iconFile.path);
+        for (const f of extraFiles) await fs.remove(f.path);
 
         const downloadUrl = `/api/download-app-direct/${appFilename}/${platform}`;
         res.json({ downloadUrl });
     } catch (err) {
         console.error("Direct app compilation failure:", err);
-        if (req.file) await fs.remove(req.file.path);
+        if (iconFile) await fs.remove(iconFile.path).catch(() => {});
+        for (const f of extraFiles) await fs.remove(f.path).catch(() => {});
         res.status(500).json({ message: 'App compilation pipeline failed.' });
     }
 });
