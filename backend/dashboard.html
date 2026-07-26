@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - WebHost</title>
+    <title>Dashboard - O4D</title>
     <meta name="robots" content="noindex, nofollow">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -71,7 +71,7 @@
     <header class="sticky top-0 z-50 w-full bg-bg-dark/75 backdrop-blur-xl border-b border-white/[0.06] h-16 flex items-center justify-between px-6 box-border">
         <div class="flex items-center gap-8">
             <a href="/" class="font-display font-extrabold text-xl tracking-tight bg-gradient-to-r from-white to-indigo-400 bg-clip-text text-transparent flex items-center gap-2">
-                <i class="fa-solid fa-cloud-lightning text-indigo-400"></i> WebHost
+                <i class="fa-solid fa-cloud-lightning text-indigo-400"></i> O4D
             </a>
             <div class="hidden md:flex gap-1">
                 <button id="nav-dash" class="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/[0.02]">Dashboard</button>
@@ -88,7 +88,7 @@
         <!-- Welcome Jumbotron Hero -->
         <div class="bg-gradient-to-r from-slate-900/60 to-slate-800/20 border border-white/[0.05] p-8 sm:p-10 rounded-[28px] shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div class="space-y-2">
-                <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">My Projects Dashboard</h2>
+                <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">Projects Dashboard</h2>
                 <p class="text-slate-400 text-sm max-w-lg">Provision sandboxed containers on Edge caching clusters. Deploy safely from private Git streams.</p>
             </div>
             <div class="flex gap-3">
@@ -320,6 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const fetchAndRenderProjects = async (isSilent = false) => { 
         try { 
+            // Injected dynamic loading indicator safely inside the target element before rendering only if NOT in silent background update mode
             if (!isSilent) {
                 projectsList.innerHTML = `
                     <div id="dynamic-loader" class="text-center py-12 col-span-full">
@@ -329,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 `; 
             }
             const projects = await apiFetch('/projects'); 
-            projectsList.innerHTML = ''; 
+            projectsList.innerHTML = ''; // Cleanly clear loading indicator
             if (!projects || projects.length === 0) { 
                 projectsList.innerHTML = `<p id="no-projects-text" class="text-center py-12 col-span-full text-slate-500 font-medium">No project containers initiated yet.</p>`; 
             } else { 
@@ -338,6 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     card.className = 'project-card-elem glass-card p-6 rounded-[24px] hover:border-white/[0.15] hover:translate-y-[-2px] transition-all flex flex-col justify-between gap-4'; 
                     card.setAttribute('id', `project-card-${project._id}`); 
 
+                    // Render direct local app bundle download buttons if project has completed builds (updated download links with custom appName query parameter)
                     let appDownloadsHTML = '';
                     if (project.appAndroidStatus === 'ready' || project.appWindowsStatus === 'ready') {
                         appDownloadsHTML = `
@@ -351,6 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         `;
                     }
 
+                    // Dynamically map active building status inside the badge element
                     let badgeHTML = '';
                     if (project.status === 'deploying' || project.status === 'queued') {
                         badgeHTML = `<span class="status-badge ${project.status}"><i class="fa-solid fa-spinner animate-spin mr-1"></i> ${project.status}</span>`;
@@ -635,6 +638,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } 
     });
 
+    // Native App Builder Compilation Submission Handler
     document.getElementById('app-studio-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = e.target.querySelector('button[type="submit"]');
@@ -676,6 +680,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Standalone Direct URL-to-App Compiler Submission Handler
     document.getElementById('direct-compile-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = document.getElementById('direct-compile-btn');
@@ -717,6 +722,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const data = await res.json();
             
+            // Build timeout tracking overlay loop (passing custom appName as query parameter)
             setTimeout(() => {
                 const customDownloadUrl = `${data.downloadUrl}?name=${encodeURIComponent(appName)}`;
                 statusDiv.innerHTML = `
@@ -762,15 +768,19 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => { toast.style.bottom = '-100px'; }, 4000);
     }
 
+    // Initialize Dashboard
     fetchAndRenderProjects(false);
     loadSavedPat(); 
     
+    // Auto status poller: Watches the DOM for ongoing builds and updates silently without flashing loader
     setInterval(async () => {
         try {
+            // Detect if any project card is currently showing an active loading state in the DOM
             const isUIRenderingActiveBuild = document.body.innerHTML.includes('fa-spinner animate-spin') || 
                                              document.querySelector('.status-badge.deploying, .status-badge.queued') !== null;
+            
             if (isUIRenderingActiveBuild) {
-                await fetchAndRenderProjects(true); 
+                await fetchAndRenderProjects(true); // Run silent updates
             }
         } catch (e) {
             console.error("Sync poller failure:", e);
