@@ -160,19 +160,47 @@ function zipDirectory(sourceDir, outPath) {
 // --- INITIALIZE GENERIC ANDROID WEBVIEW TEMPLATE APK ---
 const TEMPLATE_APK_PATH = path.join(APPS_DIR, 'webview_base_template.apk');
 
+// The template used to live only at the jsDelivr URL below, which has since
+// gone 404 (the upstream repo restructured). Depending on one third-party
+// file at a hardcoded path with no fallback is what broke this feature in
+// the first place. BASE_APK_TEMPLATE_URL lets you point this at a copy you
+// control (e.g. a GitHub release asset in your own repo, or a Cloudinary
+// URL — cloudinary is already a dependency here) without editing code.
+// STRONGLY RECOMMENDED: build or download a working WebView-shell APK once,
+// host it yourself, and set BASE_APK_TEMPLATE_URL in your environment.
+const BASE_APK_CANDIDATE_URLS = [
+    process.env.BASE_APK_TEMPLATE_URL,
+    'https://cdn.jsdelivr.net/gh/mrepol742/web-appp@master/release/debug.apk' // legacy fallback — currently 404, kept only so old deploys don't hard-crash on the missing env var
+].filter(Boolean);
+
 // Robust download checker helper with promise resolution
 async function ensureBaseApkTemplate() {
-    if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
-        console.log("📥 Baseline template APK missing or not yet cached. Fetching on demand from jsDelivr CDN...");
-        const response = await fetch('https://cdn.jsdelivr.net/gh/mrepol742/web-appp@master/release/debug.apk');
-        if (!response.ok) {
-            throw new Error("Unable to retrieve baseline APK template from secure CDN.");
-        }
-        const buffer = await response.arrayBuffer();
-        await fs.ensureDir(path.dirname(TEMPLATE_APK_PATH));
-        await fs.writeFile(TEMPLATE_APK_PATH, Buffer.from(buffer));
-        console.log("✅ Baseline APK template cached successfully.");
+    if (await fs.pathExists(TEMPLATE_APK_PATH)) return;
+
+    if (!process.env.BASE_APK_TEMPLATE_URL) {
+        console.warn('[APK_TEMPLATE] BASE_APK_TEMPLATE_URL is not set — falling back to a legacy CDN link that is known to be broken. Set BASE_APK_TEMPLATE_URL to a template APK you host yourself.');
     }
+
+    const failures = [];
+    for (const url of BASE_APK_CANDIDATE_URLS) {
+        try {
+            console.log(`📥 Baseline template APK missing or not yet cached. Fetching from ${url} ...`);
+            const response = await fetch(url);
+            if (!response.ok) {
+                failures.push(`${url} -> HTTP ${response.status}`);
+                continue;
+            }
+            const buffer = await response.arrayBuffer();
+            await fs.ensureDir(path.dirname(TEMPLATE_APK_PATH));
+            await fs.writeFile(TEMPLATE_APK_PATH, Buffer.from(buffer));
+            console.log('✅ Baseline APK template cached successfully.');
+            return;
+        } catch (err) {
+            failures.push(`${url} -> ${err.message}`);
+        }
+    }
+
+    throw new Error(`Unable to retrieve baseline APK template. Tried: ${failures.join(' | ') || 'no candidate URLs configured'}. Set BASE_APK_TEMPLATE_URL to a working, self-hosted template APK.`);
 }
 
 // Trigger background download on server startup
@@ -631,7 +659,7 @@ app.post('/api/build-app-direct', authMiddleware, upload.fields([{ name: 'icon',
         console.error("Direct app compilation failure:", err);
         if (iconFile) await fs.remove(iconFile.path).catch(() => {});
         for (const f of extraFiles) await fs.remove(f.path).catch(() => {});
-        res.status(500).json({ message: 'App compilation pipeline failed.' });
+        res.status(500).json({ message: `App compilation pipeline failed: ${err.message}` });
     }
 });
 
