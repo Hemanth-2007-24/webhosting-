@@ -14,6 +14,8 @@ const path = require('path');
 const fs = require('fs-extra');
 const mongoose = require('mongoose');
 const cuid = require('cuid');
+const unzipper = require('unzipper');
+const simpleGit = require('simple-git');
 
 const { connectDatabase, User, Project, Build, Log } = require('./database');
 const { CloudinaryService, SecurityService, PackageNameService, LoggerService } = require('./services');
@@ -39,7 +41,9 @@ const globalLimiter = rateLimit({
 app.use(globalLimiter);
 
 // File Upload configuration
-const upload = multer({ dest: path.join(__dirname, 'uploads/') });
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+fs.ensureDirSync(UPLOADS_DIR);
+const upload = multer({ dest: UPLOADS_DIR });
 
 // Connect Mongoose to Atlas
 connectDatabase(process.env.MONGO_URI);
@@ -56,6 +60,45 @@ const authenticateToken = (req, res, next) => {
         next();
     });
 };
+
+// --- SMART INDEX FINDER SYSTEM ---
+async function findIndexHtmlRecursive(dir, currentDepth, maxDepth) {
+    if (currentDepth > maxDepth) return null;
+    const items = await fs.readdir(dir, { withFileTypes: true });
+    for (const item of items) {
+        if (item.isFile() && item.name.toLowerCase() === 'index.html') {
+            return dir;
+        }
+    }
+    for (const item of items) {
+        if (item.isDirectory() && !['node_modules', '.git', '.github'].includes(item.name)) {
+            const subPath = path.join(dir, item.name);
+            const found = await findIndexHtmlRecursive(subPath, currentDepth + 1, maxDepth);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+async function findIndexHtmlDir(basePath) { 
+    if (await fs.pathExists(path.join(basePath, 'index.html'))) { 
+        return basePath; 
+    } 
+    const commonDirs = ['dist', 'build', 'public', 'out']; 
+    for (const dir of commonDirs) {
+        const potentialPath = path.join(basePath, dir); 
+        if (await fs.pathExists(path.join(potentialPath, 'index.html'))) { 
+            return potentialPath; 
+        } 
+    } 
+    try {
+        const detectedPath = await findIndexHtmlRecursive(basePath, 0, 3);
+        if (detectedPath) return detectedPath;
+    } catch (error) {
+        console.error("Smart Index Finder lookup error:", error);
+    }
+    return basePath; 
+}
 
 // =================================================================
 // ==                     AUTH API ENDPOINTS                      ==
@@ -133,6 +176,7 @@ app.post('/api/auth/logout', authenticateToken, async (req, res) => {
 
 app.post('/api/projects', authenticateToken, async (req, res) => {
     try {
+        // Robust fallback supporting both `projectName` and original `name` payload keys
         const name = req.body.projectName || req.body.name;
         const websiteUrl = req.body.websiteUrl || 'https://o4dhomepage.onrender.com/c.html';
         const platform = req.body.platform || 'android';
@@ -220,13 +264,13 @@ app.post('/api/projects/:id/upload-assets', authenticateToken, upload.fields([{ 
         if (!project) return res.status(404).json({ message: "Project not found." });
 
         if (req.files['icon']) {
-            const iconRes = await CloudinaryService.uploadImage(req.files['icon'][0].path, 'icons', 512, 512);
+            const iconRes = await CloudinaryService.uploadImage(req.files['icon'][0].path, 'icons');
             project.iconUrl = iconRes.url;
             await fs.remove(req.files['icon'][0].path);
         }
 
         if (req.files['splash']) {
-            const splashRes = await CloudinaryService.uploadImage(req.files['splash'][0].path, 'splashes', 1280, 1920);
+            const splashRes = await CloudinaryService.uploadImage(req.files['splash'][0].path, 'splashes');
             project.splashUrl = splashRes.url;
             await fs.remove(req.files['splash'][0].path);
         }
@@ -384,6 +428,108 @@ app.get('/api/builds/download/:id/:platform', async (req, res) => {
         return res.status(404).send("Application artifact was not found or is currently packaging.");
     }
     res.download(filePath, `release_${id}${extension}`);
+});
+
+// =================================================================
+// ==           STATIC WEBSITE DEPLOYMENT PIPELINE ROUTE          ==
+// =================================================================
+
+app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, res) => {
+    const { projectId, gitURL, rootDir } = req.body;
+    let project;
+    try {
+        project = await Project.findById(projectId);
+        if (!project || project.createdBy.toString() !== req.user.id) {
+            return res.status(404).json({ message: 'Project not found or unauthorized.' });
+        }
+        
+        await project.updateOne({ status: 'deploying' });
+        console.log(`[${project.projectName}] --> Deployment started.`);
+        res.status(202).json({ message: 'Deployment accepted and is in progress.' });
+        
+        const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
+        const projectDeployPath = path.join(DEPLOYMENTS_DIR, project._id.toString());
+        console.log(`[${project.projectName}] STEP 1: Cleaning up old deployment at ${projectDeployPath}`);
+        await fs.ensureDir(projectDeployPath);
+        await fs.emptyDir(projectDeployPath);
+        
+        if (gitURL) {
+            console.log(`[${project.projectName}] STEP 2: Preparing cloning URL.`);
+            const tempCloneDir = path.join(UPLOADS_DIR, `_temp_git_${project._id}`);
+            await fs.emptyDir(tempCloneDir);
+            
+            const user = await User.findById(req.user.id);
+            const pat = user ? user.githubPat : '';
+            let cloneURL = gitURL;
+            
+            if (pat && gitURL.includes('github.com')) {
+                if (gitURL.startsWith('https://')) {
+                    cloneURL = gitURL.replace('https://', `https://${pat}@`);
+                } else if (!gitURL.startsWith('http')) {
+                    cloneURL = `https://${pat}@github.com/${gitURL.replace(/^github\.com\//, '')}`;
+                }
+            }
+            
+            console.log(`[${project.projectName}] ... Cloning repository.`);
+            await simpleGit().clone(cloneURL, tempCloneDir, { '--depth': 1 });
+            console.log(`[${project.projectName}] ... Git clone successful.`);
+            
+            let startPath = tempCloneDir;
+            if (rootDir) {
+                const resolvedPath = path.resolve(tempCloneDir, rootDir.trim());
+                if (!resolvedPath.startsWith(tempCloneDir)) {
+                    throw new Error("Security Violation: Target path escapes deployment directory.");
+                }
+                startPath = resolvedPath;
+                if (!(await fs.pathExists(startPath))) {
+                    throw new Error(`The configured root directory '${rootDir}' does not exist inside the repository.`);
+                }
+            }
+            
+            const sourceDir = await findIndexHtmlDir(startPath);
+            console.log(`[${project.projectName}] STEP 3: Deploying from directory containing index.html: ${sourceDir}`);
+            await fs.copy(sourceDir, projectDeployPath);
+            await fs.remove(tempCloneDir);
+        } else if (req.file) {
+            console.log(`[${project.projectName}] STEP 2: Preparing extraction workspace.`);
+            const tempExtractDir = path.join(UPLOADS_DIR, `_temp_zip_${project._id}`);
+            await fs.ensureDir(tempExtractDir);
+            await fs.emptyDir(tempExtractDir);
+
+            console.log(`[${project.projectName}] ... Extracting zip archive.`);
+            const zipArchive = await unzipper.Open.file(req.file.path);
+            await zipArchive.extract({ path: tempExtractDir });
+            console.log(`[${project.projectName}] ... Unzip successful.`);
+            await fs.remove(req.file.path);
+
+            let startPath = tempExtractDir;
+            if (rootDir) {
+                const resolvedPath = path.resolve(tempExtractDir, rootDir.trim());
+                if (!resolvedPath.startsWith(tempExtractDir)) {
+                    throw new Error("Security Violation: Target path escapes deployment directory.");
+                }
+                startPath = resolvedPath;
+                if (!(await fs.pathExists(startPath))) {
+                    throw new Error(`The configured root directory '${rootDir}' does not exist inside the archive.`);
+                }
+            }
+
+            const sourceDir = await findIndexHtmlDir(startPath);
+            console.log(`[${project.projectName}] STEP 3: Deploying from directory containing index.html: ${sourceDir}`);
+            await fs.copy(sourceDir, projectDeployPath);
+            await fs.remove(tempExtractDir);
+        } else {
+            throw new Error("No Git URL or file was provided for deployment.");
+        }
+        
+        await project.updateOne({ status: 'ready' });
+        console.log(`[${project.projectName}] --> ✅ Deployment Succeeded. Status set to 'ready'.`);
+    } catch (error) {
+        console.error(`[${project ? project.projectName : projectId}] --> ❌ Critical deployment failure:`, error.message);
+        if (project) {
+            await project.updateOne({ status: 'failed' });
+        }
+    }
 });
 
 // =================================================================

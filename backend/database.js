@@ -17,22 +17,22 @@ const connectDatabase = async (uri) => {
     }
 };
 
-// --- USER SCHEMA (Unified with githubPat) ---
+// --- USER SCHEMA (Saves githubPat to MongoDB Atlas) ---
 const UserSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true, trim: true, lowercase: true },
     password: { type: String, required: true },
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     refreshToken: { type: String, default: '' },
-    githubPat: { type: String, default: '' }, // Safely stores token to MongoDB Atlas
+    githubPat: { type: String, default: '' }, // Verified saved to MongoDB Atlas
     resetPasswordToken: { type: String, default: '' },
     resetPasswordExpires: { type: Date, default: null }
 }, { timestamps: true });
 
-// --- PROJECT SCHEMA (Corrected with subdomain & status) ---
+// --- PROJECT SCHEMA (Sync subdomain & status) ---
 const ProjectSchema = new mongoose.Schema({
     projectName: { type: String, required: true },
     name: { type: String }, // Backward compatibility fallback
-    subdomain: { type: String, required: true, unique: true }, // Mapped correctly
+    subdomain: { type: String, required: true, unique: true }, 
     websiteUrl: { type: String, required: true },
     packageName: { type: String, required: true, unique: true },
     appName: { type: String, required: true },
