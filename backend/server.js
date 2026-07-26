@@ -7,6 +7,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+const os = require('os');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -15,6 +16,7 @@ const unzipper = require('unzipper');
 const fs = require('fs-extra');
 const cuid = require('cuid');
 const archiver = require('archiver');
+const cloudinary = require('cloudinary').v2; // Uses CLOUDINARY_URL env variable automatically
 
 // --- APP & MIDDLEWARE SETUP ---
 const app = express();
@@ -68,16 +70,40 @@ const authMiddleware = (req, res, next) => {
     }
 };
 
-// --- DIRECTORIES & FILE UPLOAD ---
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
-const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
-const APPS_DIR = path.join(__dirname, 'compiled_apps');
+// --- EPHEMERAL DIRECTORIES & FILE UPLOAD ---
+// Using OS temp directory so this runs safely in serverless environments (Render, Heroku, Vercel)
+const TEMP_BASE = path.join(os.tmpdir(), 'webhost_platform');
+const UPLOADS_DIR = path.join(TEMP_BASE, 'uploads');
+const DEPLOYMENTS_DIR = path.join(TEMP_BASE, 'deployments');
+const APPS_DIR = path.join(TEMP_BASE, 'compiled_apps');
 
 fs.ensureDirSync(UPLOADS_DIR); 
 fs.ensureDirSync(DEPLOYMENTS_DIR); 
 fs.ensureDirSync(APPS_DIR); 
 
 const upload = multer({ dest: UPLOADS_DIR });
+
+// --- CLOUDINARY CLOUD STORAGE HELPERS ---
+async function uploadToCloudinary(filePath, publicId) {
+    return new Promise((resolve, reject) => {
+        cloudinary.uploader.upload(filePath, {
+            resource_type: 'raw', // Critical for handling binaries and zip files
+            public_id: publicId,
+            overwrite: true
+        }, (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+        });
+    });
+}
+
+async function downloadFromCloudinary(publicId, destPath) {
+    const url = cloudinary.url(publicId, { resource_type: 'raw' });
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP Error ${res.status} fetching from Cloudinary`);
+    const buffer = await res.arrayBuffer();
+    await fs.outputFile(destPath, Buffer.from(buffer));
+}
 
 // --- SMART INDEX FINDER SYSTEM ---
 async function findIndexHtmlRecursive(dir, currentDepth, maxDepth) {
@@ -103,12 +129,9 @@ async function findIndexHtmlRecursive(dir, currentDepth, maxDepth) {
 }
 
 async function findIndexHtmlDir(basePath) { 
-    // 1. Check root directory
     if (await fs.pathExists(path.join(basePath, 'index.html'))) { 
         return basePath; 
     } 
-    
-    // 2. Check common output build subdirectories
     const commonDirs = ['dist', 'build', 'public', 'out']; 
     for (const dir of commonDirs) { 
         const potentialPath = path.join(basePath, dir); 
@@ -116,15 +139,12 @@ async function findIndexHtmlDir(basePath) {
             return potentialPath; 
         } 
     } 
-    
-    // 3. Recursive lookup fallback (Up to 3 directories deep)
     try {
         const detectedPath = await findIndexHtmlRecursive(basePath, 0, 3);
         if (detectedPath) return detectedPath;
     } catch (error) {
         console.error("Smart Index Finder lookup error:", error);
     }
-    
     return basePath; 
 }
 
@@ -158,7 +178,6 @@ function zipDirectory(sourceDir, outPath) {
 // --- INITIALIZE GENERIC ANDROID WEBVIEW TEMPLATE APK ---
 const TEMPLATE_APK_PATH = path.join(APPS_DIR, 'webview_base_template.apk');
 
-// Robust download checker helper with promise resolution
 async function ensureBaseApkTemplate() {
     if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
         console.log("📥 Baseline template APK missing or not yet cached. Fetching on demand from jsDelivr CDN...");
@@ -173,7 +192,6 @@ async function ensureBaseApkTemplate() {
     }
 }
 
-// Trigger background download on server startup
 ensureBaseApkTemplate().catch(err => console.error("⚠️ Background template pre-fetch failed:", err.message));
 
 // =================================================================
@@ -311,11 +329,21 @@ app.delete('/api/projects/:id', authMiddleware, async (req, res) => {
         if (project.owner.toString() !== req.user.id) { 
             return res.status(403).json({ message: 'Forbidden: You do not own this project.' }); 
         } 
+        
         const projectDeployPath = path.join(DEPLOYMENTS_DIR, project.id); 
         await fs.remove(projectDeployPath); 
-        console.log(`[${project.name}] --> Files deleted from disk at ${projectDeployPath}`); 
+
+        // Cleanup resources from Cloudinary
+        try {
+            await cloudinary.uploader.destroy(`deployments/${project.id}.zip`, { resource_type: 'raw' });
+            await cloudinary.uploader.destroy(`apps/${project.id}_android.apk`, { resource_type: 'raw' });
+            await cloudinary.uploader.destroy(`apps/${project.id}_windows.vbs`, { resource_type: 'raw' });
+        } catch (cloudErr) {
+            console.warn(`[${project.name}] Cloudinary cleanup partial or failed:`, cloudErr.message);
+        }
+
         await Project.findByIdAndDelete(projectId); 
-        console.log(`[${project.name}] --> Record deleted from database.`); 
+        console.log(`[${project.name}] --> Record and cloud resources deleted.`); 
         res.status(204).send(); 
     } catch (error) { 
         console.error("Delete Project Error:", error); 
@@ -338,14 +366,18 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
         res.status(202).json({ message: 'Deployment accepted and is in progress.' }); 
         
         const projectDeployPath = path.join(DEPLOYMENTS_DIR, project.id); 
-        console.log(`[${project.name}] STEP 1: Cleaning up old deployment at ${projectDeployPath}`); 
+        console.log(`[${project.name}] STEP 1: Cleaning up local cache deployment at ${projectDeployPath}`); 
         await fs.ensureDir(projectDeployPath); 
         await fs.emptyDir(projectDeployPath); 
+        
+        let sourceDir = "";
+        let cleanupPath = "";
         
         if (gitURL) { 
             console.log(`[${project.name}] STEP 2: Preparing cloning URL.`); 
             const tempCloneDir = path.join(UPLOADS_DIR, `_temp_git_${project.id}`); 
             await fs.emptyDir(tempCloneDir); 
+            cleanupPath = tempCloneDir;
             
             const user = await User.findById(req.user.id); 
             const pat = user ? user.githubPat : ''; 
@@ -363,74 +395,64 @@ app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) 
             await simpleGit().clone(cloneURL, tempCloneDir, { '--depth': 1 }); 
             console.log(`[${project.name}] ... Git clone successful.`); 
             
-            // Resolve starting path cleanly
             let startPath = tempCloneDir;
             if (normalizedRootDir) {
                 const resolvedPath = path.resolve(tempCloneDir, normalizedRootDir);
-                if (!resolvedPath.startsWith(tempCloneDir)) {
-                    throw new Error("Security Violation: Target path escapes deployment directory.");
-                }
+                if (!resolvedPath.startsWith(tempCloneDir)) throw new Error("Security Violation: Target path escapes deployment directory.");
                 startPath = resolvedPath;
-                if (!(await fs.pathExists(startPath))) {
-                    throw new Error(`The configured root directory '${normalizedRootDir}' does not exist inside the repository.`);
-                }
+                if (!(await fs.pathExists(startPath))) throw new Error(`The configured root directory '${normalizedRootDir}' does not exist inside the repository.`);
             }
             
-            // Run Smart Index Finder starting from the resolved start folder
-            const sourceDir = await findIndexHtmlDir(startPath);
-            
-            console.log(`[${project.name}] STEP 3: Deploying from directory containing index.html: ${sourceDir}`); 
-            await fs.copy(sourceDir, projectDeployPath); 
-            console.log(`[${project.name}] STEP 4: Copied files to final deployment directory.`); 
-            await fs.remove(tempCloneDir); 
+            sourceDir = await findIndexHtmlDir(startPath);
         } else if (req.file) { 
             console.log(`[${project.name}] STEP 2: Preparing extraction workspace.`); 
             const tempExtractDir = path.join(UPLOADS_DIR, `_temp_zip_${project.id}`); 
             await fs.ensureDir(tempExtractDir); 
             await fs.emptyDir(tempExtractDir); 
+            cleanupPath = tempExtractDir;
 
-            // Extract file using standard promise open file methods
             console.log(`[${project.name}] ... Extracting zip archive.`); 
             const zipArchive = await unzipper.Open.file(req.file.path);
             await zipArchive.extract({ path: tempExtractDir });
             console.log(`[${project.name}] ... Unzip successful.`); 
             await fs.remove(req.file.path); 
 
-            // Resolve target directory path
             let startPath = tempExtractDir;
             if (normalizedRootDir) {
                 const resolvedPath = path.resolve(tempExtractDir, normalizedRootDir);
-                if (!resolvedPath.startsWith(tempExtractDir)) {
-                    throw new Error("Security Violation: Target path escapes deployment directory.");
-                }
+                if (!resolvedPath.startsWith(tempExtractDir)) throw new Error("Security Violation: Target path escapes deployment directory.");
                 startPath = resolvedPath;
-                if (!(await fs.pathExists(startPath))) {
-                    throw new Error(`The configured root directory '${normalizedRootDir}' does not exist inside the archive.`);
-                }
+                if (!(await fs.pathExists(startPath))) throw new Error(`The configured root directory '${normalizedRootDir}' does not exist inside the archive.`);
             }
 
-            // Run Smart Index Finder on Zip exactly like Git workflow
-            const sourceDir = await findIndexHtmlDir(startPath);
-            console.log(`[${project.name}] STEP 3: Deploying from directory containing index.html: ${sourceDir}`); 
-            await fs.copy(sourceDir, projectDeployPath); 
-            console.log(`[${project.name}] STEP 4: Copied files to final deployment directory.`); 
-            await fs.remove(tempExtractDir); 
+            sourceDir = await findIndexHtmlDir(startPath);
         } else { 
             throw new Error("No Git URL or file was provided for deployment."); 
         } 
+        
+        console.log(`[${project.name}] STEP 3: Caching local index deployment from: ${sourceDir}`); 
+        await fs.copy(sourceDir, projectDeployPath); 
+        
+        console.log(`[${project.name}] STEP 4: Creating ZIP bundle and uploading to Cloudinary...`); 
+        const zipOutPath = path.join(UPLOADS_DIR, `${project.id}_deploy.zip`);
+        await zipDirectory(sourceDir, zipOutPath);
+        
+        await uploadToCloudinary(zipOutPath, `deployments/${project.id}.zip`);
+        console.log(`[${project.name}] ... Successfully uploaded to Cloudinary persistence.`); 
+        
+        // Final ephemeral directory cleanups
+        await fs.remove(zipOutPath);
+        if (cleanupPath) await fs.remove(cleanupPath);
+        
         await project.updateOne({ status: 'ready' }); 
-        console.log(`[${project.name}] --> ✅ Deployment Succeeded. Status set to 'ready'.`); 
+        console.log(`[${project.name}] --> ✅ Deployment Succeeded.`); 
     } catch (error) { 
         console.error(`[${project ? project.name : projectId}] --> ❌ Critical deployment failure:`, error.message); 
-        console.error(error.stack); 
-        if (project) { 
-            await project.updateOne({ status: 'failed' }); 
-            console.log(`[${project.name}] ... Status updated to 'failed'.`); 
-        } 
+        if (project) await project.updateOne({ status: 'failed' }); 
     }
 });
 
-// --- NATIVE WEBVIEW APP COMPILER ROUTE (APK CONFIG INJECTION & SILENT VBS BUNDLING) ---
+// --- NATIVE WEBVIEW APP COMPILER ROUTE ---
 app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), async (req, res) => {
     const { platform, appName } = req.body;
     const projectId = req.params.id;
@@ -440,9 +462,7 @@ app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), a
     }
 
     const cleanAppName = (appName || 'Web Launcher').trim();
-    if (cleanAppName.length < 2) {
-        return res.status(400).json({ message: 'Application name is too short.' });
-    }
+    if (cleanAppName.length < 2) return res.status(400).json({ message: 'Application name is too short.' });
 
     try {
         const project = await Project.findById(projectId);
@@ -453,54 +473,51 @@ app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), a
         const updateField = platform === 'android' ? { appAndroidStatus: 'building', appName: cleanAppName } : { appWindowsStatus: 'building', appName: cleanAppName };
         await Project.findByIdAndUpdate(projectId, updateField);
 
-        console.log(`[${project.name}] --> Compiling borderless native WebView container for: ${platform}`);
+        console.log(`[${project.name}] --> Compiling native WebView container for: ${platform}`);
         res.status(202).json({ message: 'Native WebView compilation sequence active.' });
 
         // Background compile task
         setTimeout(async () => {
-            const finalPackagePath = path.join(APPS_DIR, `${project.subdomain}_${platform}`);
-            
+            const finalPackagePath = path.join(APPS_DIR, `${project.id}_${platform}`);
+            const extension = platform === 'android' ? '.apk' : '.vbs';
+            const absoluteFilePath = `${finalPackagePath}${extension}`;
+
             try {
                 const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
 
                 if (platform === 'windows') {
-                    // Create silent native VBScript wrapper directly to run natively without EXE header errors
                     const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
-                    await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
-                    
-                    await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
-                    console.log(`[${project.name}] Windows Desktop launcher VBS compiled successfully.`);
-
+                    await fs.outputFile(absoluteFilePath, vbsScript);
                 } else if (platform === 'android') {
-                    // Inject WebView target configurations directly to baseline APK file template (using on-demand download check)
                     await ensureBaseApkTemplate();
-                    
-                    if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
-                        throw new Error("Baseline template APK was not cached on server.");
-                    }
+                    if (!(await fs.pathExists(TEMPLATE_APK_PATH))) throw new Error("Baseline template APK was not cached on server.");
 
-                    // Pure binary byte appending (Avoids ZIP/unzipper parsing locks)
                     const baseApkBuffer = await fs.readFile(TEMPLATE_APK_PATH);
                     const configMarker = `[URL_START]${targetProjectUrl}[URL_END][TITLE_START]${cleanAppName}[TITLE_END]`;
                     const patchedBuffer = Buffer.concat([baseApkBuffer, Buffer.from(configMarker, 'utf8')]);
 
-                    await fs.writeFile(`${finalPackagePath}.apk`, patchedBuffer);
-                    await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
-                    console.log(`[${project.name}] Android WebView APK compiled successfully.`);
+                    await fs.writeFile(absoluteFilePath, patchedBuffer);
                 }
 
-                if (req.file) {
-                    await fs.remove(req.file.path);
-                }
+                // Push compiled binary off ephemeral storage to Cloudinary
+                console.log(`[${project.name}] Uploading compiled ${platform} package to Cloudinary.`);
+                await uploadToCloudinary(absoluteFilePath, `apps/${project.id}_${platform}${extension}`);
+                
+                await Project.findByIdAndUpdate(projectId, { 
+                    [platform === 'android' ? 'appAndroidStatus' : 'appWindowsStatus']: 'ready' 
+                });
+                console.log(`[${project.name}] Compiler task successful.`);
+
+                await fs.remove(absoluteFilePath);
+                if (req.file) await fs.remove(req.file.path);
+                
             } catch (err) {
                 console.error(`Native App Compilation failure for project ${project.name}:`, err);
                 const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
                 await Project.findByIdAndUpdate(projectId, failField);
-                if (req.file) {
-                    await fs.remove(req.file.path);
-                }
+                if (req.file) await fs.remove(req.file.path);
             }
-        }, 10000);
+        }, 3000);
 
     } catch (err) {
         console.error("App Build Request failure:", err);
@@ -512,45 +529,35 @@ app.post('/api/projects/:id/build-app', authMiddleware, upload.single('icon'), a
 app.post('/api/build-app-direct', authMiddleware, upload.single('icon'), async (req, res) => {
     const { url, platform, appName } = req.body;
 
-    if (!url || !platform || !appName) {
-        return res.status(400).json({ message: 'Missing app compiling parameters.' });
-    }
+    if (!url || !platform || !appName) return res.status(400).json({ message: 'Missing app compiling parameters.' });
 
     const cleanAppName = appName.trim();
-    if (cleanAppName.length < 2) {
-        return res.status(400).json({ message: 'Application name is too short.' });
-    }
+    if (cleanAppName.length < 2) return res.status(400).json({ message: 'Application name is too short.' });
 
     const appFilename = `direct_${cuid()}_${platform}`;
-    const finalPackagePath = path.join(APPS_DIR, appFilename);
+    const extension = platform === 'android' ? '.apk' : '.vbs';
+    const finalPackagePath = path.join(APPS_DIR, appFilename + extension);
 
     try {
-        console.log(`[DIRECT_BUILD] --> Compiling native WebView wrapper directly for URL: ${url}`);
+        console.log(`[DIRECT_BUILD] --> Compiling native wrapper for URL: ${url}`);
 
         if (platform === 'windows') {
             const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${url} --window-size=1280,800", 0, false\n`;
-            await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
-            console.log(`[DIRECT_BUILD] Direct VBScript launcher packaged successfully.`);
+            await fs.outputFile(finalPackagePath, vbsScript);
         } else if (platform === 'android') {
-            // Check and fetch baseline template APK dynamically from CDN if it is missing
             await ensureBaseApkTemplate();
-            
-            if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
-                throw new Error("Baseline template APK was not cached on server.");
-            }
+            if (!(await fs.pathExists(TEMPLATE_APK_PATH))) throw new Error("Baseline template APK was not cached on server.");
 
-            // Pure binary byte appending (Avoids ZIP/unzipper parsing locks)
             const baseApkBuffer = await fs.readFile(TEMPLATE_APK_PATH);
             const configMarker = `[URL_START]${url}[URL_END][TITLE_START]${cleanAppName}[TITLE_END]`;
             const patchedBuffer = Buffer.concat([baseApkBuffer, Buffer.from(configMarker, 'utf8')]);
-
-            await fs.writeFile(`${finalPackagePath}.apk`, patchedBuffer);
-            console.log(`[DIRECT_BUILD] Direct Android WebView APK compiled successfully.`);
+            await fs.writeFile(finalPackagePath, patchedBuffer);
         }
 
-        if (req.file) {
-            await fs.remove(req.file.path);
-        }
+        // Upload to cloudinary
+        await uploadToCloudinary(finalPackagePath, `apps/${appFilename}${extension}`);
+        await fs.remove(finalPackagePath);
+        if (req.file) await fs.remove(req.file.path);
 
         const downloadUrl = `/api/download-app-direct/${appFilename}/${platform}`;
         res.json({ downloadUrl });
@@ -561,51 +568,63 @@ app.post('/api/build-app-direct', authMiddleware, upload.single('icon'), async (
     }
 });
 
-// --- DOWNLOAD DIRECTLY COMPILED NATIVE APP PACKAGES WITH CUSTOM USER FILENAMES ---
+// --- DOWNLOAD DIRECTLY COMPILED NATIVE APP PACKAGES (PROXY FROM CLOUDINARY) ---
 app.get('/api/download-app-direct/:filename/:platform', async (req, res) => {
     const { filename, platform } = req.params;
     const extension = platform === 'android' ? '.apk' : '.vbs';
-    const absoluteFilePath = path.join(APPS_DIR, filename + extension);
+    const publicId = `apps/${filename}${extension}`;
 
-    if (!(await fs.pathExists(absoluteFilePath))) {
-        return res.status(404).send('Compiled application binary package was not found.');
-    }
-
-    // Sanitize and use custom name if passed in query parameters
     const customAppName = req.query.name || 'compiled_launcher';
     const cleanDownloadName = customAppName.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
     
-    res.download(absoluteFilePath, `${cleanDownloadName}${extension}`);
+    try {
+        const url = cloudinary.url(publicId, { resource_type: 'raw' });
+        const fetchRes = await fetch(url);
+        if (!fetchRes.ok) return res.status(404).send('Compiled application binary package was not found on cloud.');
+        
+        res.setHeader('Content-Disposition', `attachment; filename="${cleanDownloadName}${extension}"`);
+        const contentType = fetchRes.headers.get('content-type');
+        if (contentType) res.setHeader('Content-Type', contentType);
+        
+        const buffer = await fetchRes.arrayBuffer();
+        res.send(Buffer.from(buffer));
+    } catch (err) {
+        console.error("Cloudinary download proxy error:", err);
+        res.status(500).send('Server error retrieving application package.');
+    }
 });
 
-// --- DOWNLOAD COMPILED NATIVE APP PACKAGES WITH CUSTOM INSTANCE APP FILENAMES ---
+// --- DOWNLOAD COMPILED NATIVE APP PACKAGES (PROXY FROM CLOUDINARY) ---
 app.get('/api/projects/:id/download-app/:platform', async (req, res) => {
     const projectId = req.params.id;
     const platform = req.params.platform;
 
-    if (!['android', 'windows'].includes(platform)) {
-        return res.status(400).send('Invalid platform parameters.');
-    }
+    if (!['android', 'windows'].includes(platform)) return res.status(400).send('Invalid platform parameters.');
 
     try {
         const project = await Project.findById(projectId);
         if (!project) return res.status(404).send('Project instance mapping does not exist.');
 
         const extension = platform === 'android' ? '.apk' : '.vbs';
-        const absoluteFilePath = path.join(APPS_DIR, `${project.subdomain}_${platform}${extension}`);
+        const publicId = `apps/${project.id}_${platform}${extension}`;
 
-        if (!(await fs.pathExists(absoluteFilePath))) {
-            return res.status(404).send('Compiled application binary package was not found.');
-        }
+        const url = cloudinary.url(publicId, { resource_type: 'raw' });
+        const fetchRes = await fetch(url);
+        
+        if (!fetchRes.ok) return res.status(404).send('Compiled application binary package was not found on cloud.');
 
-        // Sanitize and use the specific appName or projectName configured on project card
         const customAppName = project.appName || project.name;
         const cleanDownloadName = customAppName.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
 
-        res.download(absoluteFilePath, `${cleanDownloadName}${extension}`);
+        res.setHeader('Content-Disposition', `attachment; filename="${cleanDownloadName}${extension}"`);
+        const contentType = fetchRes.headers.get('content-type');
+        if (contentType) res.setHeader('Content-Type', contentType);
+
+        const buffer = await fetchRes.arrayBuffer();
+        res.send(Buffer.from(buffer));
     } catch (err) {
         console.error("Download delivery failure:", err);
-        res.status(500).send('Server Error.');
+        res.status(500).send('Server Error retrieving cloud asset.');
     }
 });
 
@@ -616,10 +635,28 @@ app.use(async (req, res, next) => {
     if (req.path.startsWith('/api/')) return next(); 
     const projectIdentifier = req.path.split('/')[1]; 
     if (!projectIdentifier) return next(); 
+    
     try { 
         const project = await Project.findOne({ subdomain: projectIdentifier, status: 'ready' }); 
         if (project) { 
             const projectPath = path.join(DEPLOYMENTS_DIR, project.id); 
+            
+            // On cache miss, fetch the zipped deployment from Cloudinary and reconstruct the container
+            if (!(await fs.pathExists(projectPath))) {
+                console.log(`[Cache Miss] Fetching static deployment container for ${project.name} from Cloudinary...`);
+                const zipPath = path.join(UPLOADS_DIR, `${project.id}_cache.zip`);
+                try {
+                    await downloadFromCloudinary(`deployments/${project.id}.zip`, zipPath);
+                    await fs.ensureDir(projectPath);
+                    const zipArchive = await unzipper.Open.file(zipPath);
+                    await zipArchive.extract({ path: projectPath });
+                    await fs.remove(zipPath);
+                } catch (err) {
+                    console.error(`[${project.name}] Cloudinary fetch error:`, err);
+                    return res.status(503).send('Deployment container is temporarily unavailable.');
+                }
+            }
+
             req.url = req.url.replace(`/${projectIdentifier}`, '') || '/'; 
             return express.static(projectPath)(req, res, (err) => { 
                 res.sendFile(path.join(projectPath, 'index.html')); 
