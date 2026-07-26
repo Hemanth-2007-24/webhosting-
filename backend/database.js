@@ -17,19 +17,22 @@ const connectDatabase = async (uri) => {
     }
 };
 
-// --- USER SCHEMA ---
+// --- USER SCHEMA (Unified with githubPat) ---
 const UserSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true, trim: true, lowercase: true },
     password: { type: String, required: true },
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     refreshToken: { type: String, default: '' },
+    githubPat: { type: String, default: '' }, // Safely stores token to MongoDB Atlas
     resetPasswordToken: { type: String, default: '' },
     resetPasswordExpires: { type: Date, default: null }
 }, { timestamps: true });
 
-// --- PROJECT SCHEMA ---
+// --- PROJECT SCHEMA (Corrected with subdomain & status) ---
 const ProjectSchema = new mongoose.Schema({
     projectName: { type: String, required: true },
+    name: { type: String }, // Backward compatibility fallback
+    subdomain: { type: String, required: true, unique: true }, // Mapped correctly
     websiteUrl: { type: String, required: true },
     packageName: { type: String, required: true, unique: true },
     appName: { type: String, required: true },
@@ -47,6 +50,7 @@ const ProjectSchema = new mongoose.Schema({
         location: { type: Boolean, default: false }
     },
     customCode: { type: String, default: '' },
+    status: { type: String, enum: ['queued', 'deploying', 'ready', 'failed', 'none'], default: 'ready' },
     buildStatus: { type: String, enum: ['none', 'building', 'ready', 'failed'], default: 'none' },
     isArchived: { type: Boolean, default: false },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }

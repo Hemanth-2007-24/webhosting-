@@ -169,7 +169,7 @@
                         <a href="/downloads/webhost.apk" class="flex items-center justify-center gap-2 p-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/35 text-emerald-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
                             <i class="fa-brands fa-android text-base"></i> Android APK
                         </a>
-                        <a href="/downloads/webhost-setup.exe" class="flex items-center justify-center gap-2 p-3.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/35 text-cyan-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
+                        <a href="/downloads/webhost-setup.exe" class="flex items-center justify-center gap-2 p-3.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 border-cyan-500/35 text-cyan-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
                             <i class="fa-brands fa-windows text-base"></i> Windows EXE
                         </a>
                     </div>
@@ -247,7 +247,7 @@
             </form>
         </div>
 
-        <!-- APP STUDIO MODAL WITH IMAGE ICON FILE UPLOADER -->
+        <!-- APP STUDIO MODAL WITH IMAGE ICON FILE UPLOADER & CUSTOM CODE EDITOR -->
         <div id="app-studio-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
             <h2 class="font-display font-extrabold text-2xl mb-2">Native App Studio</h2>
@@ -268,6 +268,11 @@
                 <div>
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Application Icon (PNG/JPG)</label>
                   <input type="file" id="app-icon-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-sm" accept="image/png, image/jpeg">
+                </div>
+                <div>
+                  <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Custom Code Injection (Optional)</label>
+                  <textarea id="app-custom-code-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white font-mono text-xs focus:outline-none focus:border-indigo-500 h-24" placeholder="// Inject Kotlin logic, extra Javascript, CSS styles or Electron main/preload snippets..."></textarea>
+                  <p class="text-[10px] text-slate-500 mt-1">Allows custom security and WebView settings.</p>
                 </div>
                 <div class="flex justify-end gap-2 pt-4">
                     <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
@@ -557,6 +562,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (appStudioBtn) {
             document.getElementById('app-project-id').value = appStudioBtn.dataset.id;
             document.getElementById('app-name-input').value = appStudioBtn.dataset.name + " App";
+            
+            // NEW: Fetch and populate project's existing customCode if present
+            try {
+                const data = await apiFetch(`/project/${appStudioBtn.dataset.id}/custom-code`);
+                document.getElementById('app-custom-code-input').value = data.customCode || '';
+            } catch (err) {
+                console.error("Failed to pre-populate custom code:", err);
+            }
+            
             showModal(document.getElementById('app-studio-modal'));
         }
 
@@ -638,7 +652,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } 
     });
 
-    // Native App Builder Compilation Submission Handler
+    // Native App Builder Compilation Submission Handler (Saves customCode before compilation)
     document.getElementById('app-studio-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = e.target.querySelector('button[type="submit"]');
@@ -646,18 +660,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const platform = document.getElementById('app-platform').value;
         const appName = document.getElementById('app-name-input').value;
         const iconFile = document.getElementById('app-icon-input').files[0];
+        const customCode = document.getElementById('app-custom-code-input').value;
 
         btn.disabled = true;
         btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Compiling...';
 
-        const formData = new FormData();
-        formData.append('platform', platform);
-        formData.append('appName', appName);
-        if (iconFile) {
-            formData.append('icon', iconFile);
-        }
-
         try {
+            // First: Save the custom code to the MongoDB project document securely
+            await apiFetch(`/project/${projectId}/custom-code`, {
+                method: 'POST',
+                body: { customCode }
+            });
+
+            // Second: Trigger the compilation process with App Name and Icons
+            const formData = new FormData();
+            formData.append('platform', platform);
+            formData.append('appName', appName);
+            if (iconFile) {
+                formData.append('icon', iconFile);
+            }
+
             const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/build-app`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
@@ -669,7 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(errData.message || 'App Compilation failed.');
             }
 
-            showToast('Native app compiler compilation initialized.', 'success');
+            showToast('Compilation started successfully!', 'success');
             hideModals();
             fetchAndRenderProjects(false);
         } catch (error) {

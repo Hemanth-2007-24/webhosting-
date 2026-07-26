@@ -133,7 +133,6 @@ app.post('/api/auth/logout', authenticateToken, async (req, res) => {
 
 app.post('/api/projects', authenticateToken, async (req, res) => {
     try {
-        // Robust fallback supporting both `projectName` and original `name` payload keys
         const name = req.body.projectName || req.body.name;
         const websiteUrl = req.body.websiteUrl || 'https://o4dhomepage.onrender.com/c.html';
         const platform = req.body.platform || 'android';
@@ -399,7 +398,7 @@ app.use(async (req, res, next) => {
     
     try {
         const ProjectModel = mongoose.model('Project'); // Safely retrieve compiled model reference
-        const project = await ProjectModel.findOne({ subdomain: projectIdentifier, buildStatus: 'ready' });
+        const project = await ProjectModel.findOne({ subdomain: projectIdentifier, status: 'ready' });
         
         if (project) {
             const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
