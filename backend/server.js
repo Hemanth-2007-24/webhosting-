@@ -1,6 +1,6 @@
-// ============================================================
-//                     server.js                           
-// ============================================================
+// =================================================================
+// ==                       server.js                             ==
+// =================================================================
 
 require('dotenv').config();
 const express = require('express');
@@ -12,6 +12,7 @@ const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs-extra');
+const mongoose = require('mongoose');
 
 const { connectDatabase, User, Project, Build, Log } = require('./database');
 const { CloudinaryService, SecurityService, PackageNameService, LoggerService } = require('./services');
@@ -19,8 +20,11 @@ const { BuildEngine } = require('./buildEngine');
 
 const app = express();
 
-// --- MIDDLEWARES ---
-app.use(helmet());
+// --- SECURITY MIDDLEWARES ---
+app.use(helmet({
+    contentSecurityPolicy: false, // Disabled to support external resources loading within sandbox WebViews
+    crossOriginEmbedderPolicy: false
+}));
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -305,6 +309,46 @@ app.get('/api/builds/download/:id/:platform', async (req, res) => {
         return res.status(404).send("Application artifact was not found or is currently packaging.");
     }
     res.download(filePath, `release_${id}${extension}`);
+});
+
+// =================================================================
+// ==      PATH-BASED DEPLOYMENT ROUTING & FRONTEND SERVING       ==
+// =================================================================
+
+// 1. Route requests to deployed project subdomains (e.g., /test-subdomain)
+app.use(async (req, res, next) => {
+    if (req.path.startsWith('/api/')) return next();
+    const projectIdentifier = req.path.split('/')[1];
+    if (!projectIdentifier) return next();
+    
+    try {
+        const ProjectModel = mongoose.model('Project'); // Safely retrieve compiled model reference
+        const project = await ProjectModel.findOne({ subdomain: projectIdentifier, buildStatus: 'ready' });
+        
+        if (project) {
+            const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
+            const projectPath = path.join(DEPLOYMENTS_DIR, project._id.toString());
+            req.url = req.url.replace(`/${projectIdentifier}`, '') || '/';
+            return express.static(projectPath)(req, res, () => {
+                res.sendFile(path.join(projectPath, 'index.html'));
+            });
+        }
+        return next();
+    } catch (error) {
+        console.error("Path-based Proxy Error:", error);
+        return res.status(500).send('Server error.');
+    }
+});
+
+// 2. Serve static frontend files (index.html, dashboard.html, style.css) from root
+app.use(express.static(__dirname));
+
+// 3. Catch-all route to serve your landing page (index.html)
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ message: "API endpoint not found." });
+    }
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // --- SERVER INITIALIZATION ---
