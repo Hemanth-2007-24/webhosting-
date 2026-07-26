@@ -166,7 +166,7 @@
                     </div>
 
                     <div class="grid grid-cols-2 gap-3 pt-2">
-                        <a href="/downloads/webhost.apk" class="flex items-center justify-center gap-2 p-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/35 text-emerald-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
+                        <a href="/downloads/webhost.apk" class="flex items-center justify-center gap-2 p-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 border-emerald-500/35 text-emerald-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
                             <i class="fa-brands fa-android text-base"></i> Android APK
                         </a>
                         <a href="/downloads/webhost-setup.exe" class="flex items-center justify-center gap-2 p-3.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 border-cyan-500/35 text-cyan-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
@@ -365,8 +365,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else if (project.appAndroidStatus === 'building' || project.appWindowsStatus === 'building') {
                         badgeHTML = `<span class="status-badge queued"><i class="fa-solid fa-spinner animate-spin mr-1"></i> BUNDLING</span>`;
                     } else {
-                        badgeHTML = `<span class="status-badge ${project.status}">${project.status}</span>`;
+                        badgeHTML = `<span class="status-badge ${project.status || 'ready'}">${project.status || 'ready'}</span>`;
                     }
+
+                    // Fixed fallback ensuring subdomain never displays as 'undefined' for old database entries
+                    const cleanSubdomain = project.subdomain || (project.projectName || project.name || 'app').toLowerCase().replace(/[^a-z0-9-]/g, '');
 
                     card.innerHTML = `
                         <div class="space-y-3">
@@ -374,7 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <h3 class="font-display font-extrabold text-lg truncate max-w-[150px]">${project.projectName || project.name}</h3>
                                 ${badgeHTML}
                             </div>
-                            <a href="/${project.subdomain}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold tracking-wide flex items-center gap-1">/${project.subdomain} <i class="fa-solid fa-external-link text-[10px]"></i></a>
+                            <a href="/${cleanSubdomain}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold tracking-wide flex items-center gap-1">/${cleanSubdomain} <i class="fa-solid fa-external-link text-[10px]"></i></a>
                             ${project.rootDir ? `<div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Path: <span class="text-slate-300 font-mono">${project.rootDir}</span></div>` : ''}
                             ${appDownloadsHTML}
                         </div>
@@ -563,7 +566,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('app-project-id').value = appStudioBtn.dataset.id;
             document.getElementById('app-name-input').value = appStudioBtn.dataset.name + " App";
             
-            // NEW: Fetch and populate project's existing customCode if present
+            // Fetch and populate project's existing customCode if present
             try {
                 const data = await apiFetch(`/project/${appStudioBtn.dataset.id}/custom-code`);
                 document.getElementById('app-custom-code-input').value = data.customCode || '';

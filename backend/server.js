@@ -185,8 +185,15 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
             return res.status(400).json({ message: "Project name must be at least 3 characters." });
         }
 
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ message: "Creator account not found." });
+
+        // Extract email prefix as secure username for subdomain format: /username-containername
+        const username = user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const containerName = name.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const subdomain = `${username}-${containerName}`;
+
         const appName = req.body.appName || name;
-        const subdomain = name.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 20) + '-' + cuid.slug();
         const packageName = PackageNameService.generatePackageName(appName);
 
         const project = new Project({
@@ -198,7 +205,8 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
             platform,
             themeColor: req.body.themeColor || '#6366F1',
             permissions: req.body.permissions || { internet: true },
-            createdBy: req.user.id
+            createdBy: req.user.id,
+            status: 'ready'
         });
 
         await project.save();
@@ -509,7 +517,7 @@ app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, re
                     throw new Error("Security Violation: Target path escapes deployment directory.");
                 }
                 startPath = resolvedPath;
-                if (!(await fs.pathExists(startPath))) {
+                if (!(await fs.pathExists(rootDir))) {
                     throw new Error(`The configured root directory '${rootDir}' does not exist inside the archive.`);
                 }
             }
@@ -574,4 +582,4 @@ app.get('*', (req, res) => {
 
 // --- SERVER INITIALIZATION ---
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 WebHost Core Engine operational on port ${PORT}`));
+app.listen(PORT, () => console.log("🚀 WebHost Core Engine operational on port " + PORT));
