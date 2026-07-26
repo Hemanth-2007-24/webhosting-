@@ -55,6 +55,36 @@
             70% { box-shadow: 0 0 0 6px rgba(234, 179, 8, 0); }
             100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
         }
+
+        /* --- Upgraded file dropzone component --- */
+        .dropzone {
+            border: 1.5px dashed rgba(255,255,255,0.14);
+            border-radius: 14px;
+            background: rgba(255,255,255,0.015);
+            padding: 1.1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .dropzone:hover {
+            border-color: rgba(99,102,241,0.45);
+            background: rgba(99,102,241,0.05);
+        }
+        .dropzone.drag-over {
+            border-color: #6366f1;
+            background: rgba(99,102,241,0.1);
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+        }
+        .file-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 999px;
+            padding: 4px 10px 4px 12px;
+            font-size: 11px; font-weight: 600; color: #cbd5e1;
+        }
+        .file-chip button { color: #f87171; opacity: 0.75; }
+        .file-chip button:hover { opacity: 1; }
     </style>
 </head>
 <body class="font-sans bg-bg-dark text-white min-h-screen relative overflow-x-hidden selection:bg-indigo-500 selection:text-white">
@@ -125,11 +155,25 @@
                         <option value="windows">Windows Desktop (.VBS)</option>
                     </select>
                 </div>
-                <div class="sm:col-span-2 flex flex-col sm:flex-row items-end justify-between gap-4 pt-2">
-                    <div class="flex-1 w-full">
-                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">App Icon (Optional PNG/JPG)</label>
-                        <input type="file" id="direct-icon" class="w-full p-2.5 bg-black/45 border border-white/[0.08] rounded-xl text-xs" accept="image/png, image/jpeg">
+                <div class="sm:col-span-2">
+                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">App Icon (Optional PNG/JPG)</label>
+                    <input type="file" id="direct-icon" class="w-full p-2.5 bg-black/45 border border-white/[0.08] rounded-xl text-xs" accept="image/png, image/jpeg">
+                </div>
+
+                <!-- NEW: extra file upload dropzone for direct compiler -->
+                <div class="sm:col-span-2 space-y-1.5">
+                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block">Additional Files (optional)</label>
+                    <p class="text-[10px] text-slate-500 -mt-1 mb-1">Bundled into the app package as local assets — configs, fonts, offline data, etc.</p>
+                    <div id="direct-dropzone" class="dropzone" tabindex="0">
+                        <i class="fa-solid fa-cloud-arrow-up text-xl text-indigo-400/80 mb-1.5"></i>
+                        <p class="text-xs text-slate-300 font-semibold">Drop files here or click to browse</p>
+                        <p class="text-[10px] text-slate-500 mt-0.5">Up to 10 files</p>
+                        <input type="file" id="direct-files" class="hidden" multiple>
                     </div>
+                    <div id="direct-files-list" class="flex flex-wrap gap-1.5 pt-1"></div>
+                </div>
+
+                <div class="sm:col-span-2 flex justify-end pt-2">
                     <button type="submit" id="direct-compile-btn" class="w-full sm:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all shadow-lg uppercase text-xs tracking-wider shrink-0 h-11">Compile Application</button>
                 </div>
             </form>
@@ -269,6 +313,19 @@
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Application Icon (PNG/JPG)</label>
                   <input type="file" id="app-icon-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-sm" accept="image/png, image/jpeg">
                 </div>
+
+                <!-- NEW: extra file upload dropzone for App Studio -->
+                <div class="space-y-1.5">
+                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block">Additional Files (optional)</label>
+                    <div id="app-dropzone" class="dropzone" tabindex="0">
+                        <i class="fa-solid fa-cloud-arrow-up text-xl text-indigo-400/80 mb-1.5"></i>
+                        <p class="text-xs text-slate-300 font-semibold">Drop files here or click to browse</p>
+                        <p class="text-[10px] text-slate-500 mt-0.5">Up to 10 files, bundled into the package</p>
+                        <input type="file" id="app-files" class="hidden" multiple>
+                    </div>
+                    <div id="app-files-list" class="flex flex-wrap gap-1.5 pt-1"></div>
+                </div>
+
                 <div class="flex justify-end gap-2 pt-4">
                     <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
                     <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs shadow-lg">Compile Application</button>
@@ -290,6 +347,61 @@ document.addEventListener('DOMContentLoaded', () => {
     const patSection = document.getElementById('pat-config-section');
     
     let hasSavedPat = false;
+
+    // --- Reusable dropzone: click-to-browse + drag & drop + chip list w/ remove ---
+    // Keeps a live FileList-like array per zone so multiple selections (click, then
+    // drag more in) accumulate instead of overwriting each other.
+    function initDropzone(zoneId, inputId, listId) {
+        const zone = document.getElementById(zoneId);
+        const input = document.getElementById(inputId);
+        const list = document.getElementById(listId);
+        let files = [];
+
+        const render = () => {
+            list.innerHTML = files.map((f, i) => `
+                <span class="file-chip">
+                    <i class="fa-solid fa-file text-[10px] text-indigo-400"></i>
+                    ${f.name.length > 22 ? f.name.slice(0, 19) + '…' : f.name}
+                    <button type="button" data-idx="${i}" class="remove-file-chip"><i class="fa-solid fa-xmark"></i></button>
+                </span>
+            `).join('');
+            list.querySelectorAll('.remove-file-chip').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    files.splice(Number(btn.dataset.idx), 1);
+                    render();
+                });
+            });
+        };
+
+        const addFiles = (fileList) => {
+            const incoming = Array.from(fileList || []);
+            files = [...files, ...incoming].slice(0, 10);
+            render();
+        };
+
+        zone.addEventListener('click', () => input.click());
+        zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') input.click(); });
+        input.addEventListener('change', () => addFiles(input.files));
+
+        ['dragenter', 'dragover'].forEach(evt => zone.addEventListener(evt, (e) => {
+            e.preventDefault(); e.stopPropagation();
+            zone.classList.add('drag-over');
+        }));
+        ['dragleave', 'drop'].forEach(evt => zone.addEventListener(evt, (e) => {
+            e.preventDefault(); e.stopPropagation();
+            zone.classList.remove('drag-over');
+        }));
+        zone.addEventListener('drop', (e) => addFiles(e.dataTransfer.files));
+
+        return {
+            getFiles: () => files,
+            reset: () => { files = []; input.value = ''; render(); }
+        };
+    }
+
+    const directDropzone = initDropzone('direct-dropzone', 'direct-files', 'direct-files-list');
+    const appDropzone = initDropzone('app-dropzone', 'app-files', 'app-files-list');
 
     // Fixed fetch utility to serialize plain JavaScript objects as JSON
     const apiFetch = async (endpoint, options = {}) => { 
@@ -557,6 +669,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (appStudioBtn) {
             document.getElementById('app-project-id').value = appStudioBtn.dataset.id;
             document.getElementById('app-name-input').value = appStudioBtn.dataset.name + " App";
+            appDropzone.reset();
             showModal(document.getElementById('app-studio-modal'));
         }
 
@@ -656,6 +769,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (iconFile) {
             formData.append('icon', iconFile);
         }
+        appDropzone.getFiles().forEach(f => formData.append('files', f));
 
         try {
             const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/build-app`, {
@@ -671,6 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             showToast('Native app compiler compilation initialized.', 'success');
             hideModals();
+            appDropzone.reset();
             fetchAndRenderProjects();
         } catch (error) {
             showToast(error.message, 'error');
@@ -707,6 +822,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (iconFile) {
             formData.append('icon', iconFile);
         }
+        directDropzone.getFiles().forEach(f => formData.append('files', f));
 
         try {
             const res = await fetch(`${API_BASE_URL}/api/build-app-direct`, {
@@ -735,6 +851,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 btn.disabled = false;
                 btn.innerHTML = 'Compile Application';
+                directDropzone.reset();
                 showToast('App compiled successfully!', 'success');
             }, 6000);
 
