@@ -274,6 +274,69 @@ app.delete('/api/project/:id/custom-code', authenticateToken, async (req, res) =
 });
 
 // =================================================================
+// ==               USER PROFILE / CREDENTIAL DETAILS             ==
+// =================================================================
+
+app.get('/api/user/pat', authenticateToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        res.json({ pat: user ? user.githubPat || '' : '' });
+    } catch (error) {
+        console.error("Fetch PAT Error:", error);
+        res.status(500).json({ message: 'Server error fetching GitHub PAT.' });
+    }
+});
+
+app.post('/api/user/pat', authenticateToken, async (req, res) => {
+    try {
+        const { pat } = req.body;
+        await User.findByIdAndUpdate(req.user.id, { githubPat: pat || '' });
+        res.json({ message: 'GitHub PAT updated successfully.' });
+    } catch (error) {
+        console.error("Save PAT Error:", error);
+        res.status(500).json({ message: 'Server error saving GitHub PAT.' });
+    }
+});
+
+app.get('/api/user/repos', authenticateToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user || !user.githubPat) {
+            return res.status(400).json({ message: 'GitHub Personal Access Token not configured.' });
+        }
+        
+        const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+            headers: {
+                'Authorization': `token ${user.githubPat}`,
+                'User-Agent': 'WebHost-Platform'
+            }
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            return res.status(response.status).json({ message: `GitHub API error: ${errText}` });
+        }
+
+        const repos = await response.json();
+        
+        if (!Array.isArray(repos)) {
+            return res.status(400).json({ message: repos.message || 'Unable to load repositories. Verify PAT scope details.' });
+        }
+
+        const simplifiedRepos = repos.map(repo => ({
+            name: repo.full_name,
+            clone_url: repo.clone_url,
+            private: repo.private
+        }));
+
+        res.json(simplifiedRepos);
+    } catch (error) {
+        console.error("Fetch User Repos Error:", error);
+        res.status(500).json({ message: 'Server error fetching user repositories.' });
+    }
+});
+
+// =================================================================
 // ==                    BUILD ENGINE API                         ==
 // =================================================================
 
