@@ -1,4 +1,4 @@
- {
+{
   "name": "webhost-platform",
   "version": "1.0.0",
   "description": "A premium SaaS Website-to-App hosting platform.",
@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "adm-zip": "^0.5.10",
     "archiver": "^5.3.1",
     "axios": "^1.4.0",
     "bcryptjs": "^2.4.3",
