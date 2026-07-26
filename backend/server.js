@@ -13,6 +13,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs-extra');
 const mongoose = require('mongoose');
+const cuid = require('cuid');
 
 const { connectDatabase, User, Project, Build, Log } = require('./database');
 const { CloudinaryService, SecurityService, PackageNameService, LoggerService } = require('./services');
@@ -132,24 +133,36 @@ app.post('/api/auth/logout', authenticateToken, async (req, res) => {
 
 app.post('/api/projects', authenticateToken, async (req, res) => {
     try {
-        const { projectName, websiteUrl, appName, platform, themeColor, permissions } = req.body;
-        const packageName = PackageNameService.generatePackageName(appName || projectName);
+        // Robust fallback supporting both `projectName` and original `name` payload keys
+        const name = req.body.projectName || req.body.name;
+        const websiteUrl = req.body.websiteUrl || 'https://o4dhomepage.onrender.com/c.html';
+        const platform = req.body.platform || 'android';
+
+        if (!name || name.trim().length < 3) {
+            return res.status(400).json({ message: "Project name must be at least 3 characters." });
+        }
+
+        const appName = req.body.appName || name;
+        const subdomain = name.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 20) + '-' + cuid.slug();
+        const packageName = PackageNameService.generatePackageName(appName);
 
         const project = new Project({
-            projectName,
+            projectName: name,
+            subdomain,
             websiteUrl,
             packageName,
-            appName: appName || projectName,
+            appName,
             platform,
-            themeColor,
-            permissions,
+            themeColor: req.body.themeColor || '#6366F1',
+            permissions: req.body.permissions || { internet: true },
             createdBy: req.user.id
         });
 
         await project.save();
-        await LoggerService.log('PROJECT_CREATED', `Project ${projectName} initiated.`, req.user.id, project._id);
+        await LoggerService.log('PROJECT_CREATED', `Project ${name} initiated.`, req.user.id, project._id);
         res.status(201).json(project);
     } catch (err) {
+        console.error("Create Project Error:", err);
         res.status(500).json({ message: err.message });
     }
 });
