@@ -15,7 +15,7 @@ const fs = require('fs-extra');
 
 const { connectDatabase, User, Project, Build, Log } = require('./database');
 const { CloudinaryService, SecurityService, PackageNameService, LoggerService } = require('./services');
-const { BuildEngine } = require('./buildengine');
+const { BuildEngine } = require('./buildEngine');
 
 const app = express();
 
