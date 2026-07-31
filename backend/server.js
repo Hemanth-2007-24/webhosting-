@@ -55,6 +55,14 @@ const ProjectSchema = new mongoose.Schema({
 const Project = mongoose.model('Project', ProjectSchema);
 
 // --- AUTH MIDDLEWARE ---
+// NOTE: All auth failures here return 401, not 400. The frontend's apiFetch()
+// treats 401 specifically as "clear stored token + redirect to login" — that's
+// the correct behavior whether the header is simply missing OR the token it
+// contains is expired/invalid/tampered/signed-with-a-stale-secret. Previously
+// the invalid/expired branch returned 400, which the client couldn't
+// distinguish from an ordinary validation error, so a stale token was never
+// cleared and every subsequent request kept failing the same way until the
+// user manually logged out.
 const authMiddleware = (req, res, next) => { 
     const authHeader = req.headers.authorization; 
     if (!authHeader || !authHeader.startsWith('Bearer ')) { 
@@ -66,7 +74,7 @@ const authMiddleware = (req, res, next) => {
         req.user = decoded; 
         next(); 
     } catch (e) { 
-        res.status(400).json({ message: 'Token is not valid.' }); 
+        res.status(401).json({ message: 'Token is not valid.' }); 
     }
 };
 
