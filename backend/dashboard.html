@@ -251,10 +251,11 @@
             <form id="deploy-form" class="space-y-4">
                 <input type="hidden" id="deploy-project-id">
                 
-                <div class="flex bg-white/[0.02] p-1.5 rounded-xl border border-white/[0.05] mb-4">
+                <div class="flex bg-white/[0.02] p-1.5 rounded-xl border border-white/[0.05] mb-1">
                     <button type="button" class="deploy-tab active flex-1 py-2 text-xs font-bold uppercase rounded-lg bg-indigo-500 text-white" data-tab="github">Git Pipeline</button>
                     <button type="button" class="deploy-tab flex-1 py-2 text-xs font-bold uppercase rounded-lg text-slate-400 hover:text-white" data-tab="upload">Direct ZIP</button>
                 </div>
+                <p class="text-[10px] text-slate-500 mb-3">A GitHub token is only needed for cloning private repos — Direct ZIP works without one.</p>
 
                 <div id="github-deploy-view" class="deploy-view space-y-4">
                     <div id="repo-select-container" class="hidden space-y-2">
@@ -403,6 +404,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const directDropzone = initDropzone('direct-dropzone', 'direct-files', 'direct-files-list');
     const appDropzone = initDropzone('app-dropzone', 'app-files', 'app-files-list');
 
+    // Shared 401 handler: an expired/invalid/tampered token is treated the
+    // same as a missing one — clear it and bounce to the login screen so the
+    // user isn't stuck retrying requests that can never succeed with a
+    // stale token. Used by both apiFetch() and the raw fetch() calls below
+    // (deploy, app-studio build, direct build) that bypass apiFetch because
+    // they need multipart FormData bodies.
+    const handleUnauthorized = () => {
+        localStorage.removeItem('token');
+        window.location.replace('/index.html');
+    };
+
     // Fixed fetch utility to serialize plain JavaScript objects as JSON
     const apiFetch = async (endpoint, options = {}) => { 
         const headers = {
@@ -420,8 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
             body
         }); 
         if (res.status === 401) { 
-            localStorage.removeItem('token'); 
-            window.location.replace('/index.html'); 
+            handleUnauthorized();
             throw new Error('Session expired'); 
         } 
         if (res.status === 204) return; 
@@ -547,7 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div>
                         <h3 class="font-display font-bold text-lg text-white">Secure Git Repository Credentials</h3>
-                        <p class="text-xs text-slate-500">Provide an authentication token to sync and clone private project workspaces.</p>
+                        <p class="text-xs text-slate-500">Optional — only needed to clone private repos via Git Pipeline. Not required to launch a container or deploy via Direct ZIP.</p>
                     </div>
                 </div>
                 <div class="flex flex-col sm:flex-row gap-3">
@@ -631,6 +642,9 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.disabled = true; 
         btn.innerHTML = 'Provisioning...'; 
         try { 
+            // NOTE: creating a container never requires a GitHub PAT — only
+            // a project name. GitHub credentials are entirely optional and
+            // only relevant later, inside the Deploy modal's Git Pipeline tab.
             await apiFetch('/projects', { 
                 method: 'POST', 
                 body: { name: document.getElementById('project-name').value }, 
@@ -659,10 +673,16 @@ document.addEventListener('DOMContentLoaded', () => {
             showModal(document.getElementById('deploy-modal')); 
             
             if (hasSavedPat) {
+                // GitHub is connected — Git Pipeline is a sensible default tab
+                document.querySelector('.deploy-tab[data-tab="github"]').click();
                 loadUserRepos();
             } else {
+                // No GitHub PAT saved. A PAT is NOT required to deploy — the
+                // user can just upload a ZIP — so default straight to the
+                // Direct ZIP tab instead of stranding them on Git Pipeline.
                 document.getElementById('repo-select-container').classList.add('hidden');
                 document.getElementById('manual-url-container').classList.remove('hidden');
+                document.querySelector('.deploy-tab[data-tab="upload"]').click();
             }
         } 
 
@@ -735,6 +755,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Authorization': `Bearer ${token}` }, 
                 body: formData, 
             }); 
+            if (res.status === 401) {
+                handleUnauthorized();
+                throw new Error('Session expired');
+            }
             if(!res.ok) { 
                 const errData = await res.json(); 
                 throw new Error(errData.message); 
@@ -778,6 +802,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: formData
             });
 
+            if (res.status === 401) {
+                handleUnauthorized();
+                throw new Error('Session expired');
+            }
             if (!res.ok) {
                 const errData = await res.json();
                 throw new Error(errData.message || 'App Compilation failed.');
@@ -831,6 +859,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: formData
             });
 
+            if (res.status === 401) {
+                handleUnauthorized();
+                throw new Error('Session expired');
+            }
             if (!res.ok) {
                 const errData = await res.json();
                 throw new Error(errData.message || 'App Compilation failed.');
@@ -863,10 +895,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('logout-btn').addEventListener('click', () => { 
-        localStorage.removeItem('token'); 
-        window.location.replace('/index.html'); 
-    });
+    document.getElementById('logout-btn').addEventListener('click', handleUnauthorized);
     
     document.getElementById('sync-btn').addEventListener('click', () => fetchAndRenderProjects(false));
 
