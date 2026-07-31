@@ -407,9 +407,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Shared 401 handler: an expired/invalid/tampered token is treated the
     // same as a missing one — clear it and bounce to the login screen so the
     // user isn't stuck retrying requests that can never succeed with a
-    // stale token. Used by both apiFetch() and the raw fetch() calls below
-    // (deploy, app-studio build, direct build) that bypass apiFetch because
-    // they need multipart FormData bodies.
+    // stale token. SESSION_EXPIRED is thrown alongside the redirect purely so
+    // the calling code's try/catch exits immediately; catch blocks check for
+    // this specific error and skip showToast() so no error flashes on screen
+    // during the brief moment before navigation actually completes.
+    const SESSION_EXPIRED = 'SESSION_EXPIRED';
     const handleUnauthorized = () => {
         localStorage.removeItem('token');
         window.location.replace('/index.html');
@@ -433,7 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }); 
         if (res.status === 401) { 
             handleUnauthorized();
-            throw new Error('Session expired'); 
+            throw new Error(SESSION_EXPIRED); 
         } 
         if (res.status === 204) return; 
         const data = await res.json(); 
@@ -506,6 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }); 
             } 
         } catch (error) { 
+            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error'); 
             projectsList.innerHTML = `<p class="text-center py-12 col-span-full text-red-400 font-medium">Failed to retrieve containers.</p>`;
         } 
@@ -584,6 +587,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await loadSavedPat();
             if (hasSavedPat) loadUserRepos();
         } catch (error) {
+            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error');
         } finally {
             btn.disabled = false;
@@ -654,6 +658,7 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.reset(); 
             fetchAndRenderProjects(); 
         } catch (error) { 
+            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error'); 
         } finally { 
             btn.disabled = false; 
@@ -700,6 +705,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     showToast('Instance deleted successfully.', 'success'); 
                     document.getElementById(`project-card-${deleteBtn.dataset.id}`).remove(); 
                 } catch (error) { 
+                    if (error.message === SESSION_EXPIRED) return;
                     showToast(error.message, 'error'); 
                 } 
             } 
@@ -757,7 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }); 
             if (res.status === 401) {
                 handleUnauthorized();
-                throw new Error('Session expired');
+                throw new Error(SESSION_EXPIRED);
             }
             if(!res.ok) { 
                 const errData = await res.json(); 
@@ -768,6 +774,7 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.reset(); 
             setTimeout(fetchAndRenderProjects, 3000); 
         } catch (error) { 
+            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error'); 
         } finally { 
             btn.disabled = false; 
@@ -804,7 +811,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (res.status === 401) {
                 handleUnauthorized();
-                throw new Error('Session expired');
+                throw new Error(SESSION_EXPIRED);
             }
             if (!res.ok) {
                 const errData = await res.json();
@@ -816,6 +823,7 @@ document.addEventListener('DOMContentLoaded', () => {
             appDropzone.reset();
             fetchAndRenderProjects();
         } catch (error) {
+            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error');
         } finally {
             btn.disabled = false;
@@ -861,7 +869,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (res.status === 401) {
                 handleUnauthorized();
-                throw new Error('Session expired');
+                throw new Error(SESSION_EXPIRED);
             }
             if (!res.ok) {
                 const errData = await res.json();
@@ -888,6 +896,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 6000);
 
         } catch (error) {
+            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error');
             statusDiv.classList.add('hidden');
             btn.disabled = false;
