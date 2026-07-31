@@ -251,11 +251,10 @@
             <form id="deploy-form" class="space-y-4">
                 <input type="hidden" id="deploy-project-id">
                 
-                <div class="flex bg-white/[0.02] p-1.5 rounded-xl border border-white/[0.05] mb-1">
+                <div class="flex bg-white/[0.02] p-1.5 rounded-xl border border-white/[0.05] mb-4">
                     <button type="button" class="deploy-tab active flex-1 py-2 text-xs font-bold uppercase rounded-lg bg-indigo-500 text-white" data-tab="github">Git Pipeline</button>
                     <button type="button" class="deploy-tab flex-1 py-2 text-xs font-bold uppercase rounded-lg text-slate-400 hover:text-white" data-tab="upload">Direct ZIP</button>
                 </div>
-                <p class="text-[10px] text-slate-500 mb-3">A GitHub token is only needed for cloning private repos — Direct ZIP works without one.</p>
 
                 <div id="github-deploy-view" class="deploy-view space-y-4">
                     <div id="repo-select-container" class="hidden space-y-2">
@@ -548,7 +547,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div>
                         <h3 class="font-display font-bold text-lg text-white">Secure Git Repository Credentials</h3>
-                        <p class="text-xs text-slate-500">Optional — only needed to clone private repos via Git Pipeline. Not required to launch a container or deploy via Direct ZIP.</p>
+                        <p class="text-xs text-slate-500">Provide an authentication token to sync and clone private project workspaces.</p>
                     </div>
                 </div>
                 <div class="flex flex-col sm:flex-row gap-3">
@@ -632,9 +631,6 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.disabled = true; 
         btn.innerHTML = 'Provisioning...'; 
         try { 
-            // NOTE: creating a container never requires a GitHub PAT — only
-            // a project name. GitHub credentials are entirely optional and
-            // only relevant later, inside the Deploy modal's Git Pipeline tab.
             await apiFetch('/projects', { 
                 method: 'POST', 
                 body: { name: document.getElementById('project-name').value }, 
@@ -663,16 +659,10 @@ document.addEventListener('DOMContentLoaded', () => {
             showModal(document.getElementById('deploy-modal')); 
             
             if (hasSavedPat) {
-                // GitHub is connected — Git Pipeline is a sensible default tab
-                document.querySelector('.deploy-tab[data-tab="github"]').click();
                 loadUserRepos();
             } else {
-                // No GitHub PAT saved. A PAT is NOT required to deploy — the
-                // user can just upload a ZIP — so default straight to the
-                // Direct ZIP tab instead of stranding them on Git Pipeline.
                 document.getElementById('repo-select-container').classList.add('hidden');
                 document.getElementById('manual-url-container').classList.remove('hidden');
-                document.querySelector('.deploy-tab[data-tab="upload"]').click();
             }
         } 
 
