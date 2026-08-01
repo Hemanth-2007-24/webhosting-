@@ -15,7 +15,13 @@ const REDIS_CONNECTION = {
     port: parseInt(process.env.REDIS_PORT || '6379')
 };
 
+// --- INITIALIZE QUEUE ---
 const buildQueue = new Queue('build-queue', { connection: REDIS_CONNECTION });
+
+// CRITICAL: Catches Redis connection errors gracefully without crashing the Node process
+buildQueue.on('error', (err) => {
+    console.error("⚠️ BullMQ Queue Redis Connection Error:", err.message);
+});
 
 class BuildEngine {
     static async enqueueBuild(projectId, platform) {
@@ -90,7 +96,6 @@ class BuildEngine {
                 win.loadURL("${project.websiteUrl}");
                 win.on('closed', () => { win = null; });
 
-                // Custom context menu implementation
                 win.webContents.on('context-menu', (e, props) => {
                     const InputMenu = Menu.buildFromTemplate([
                         { label: 'Undo', role: 'undo' },
@@ -106,8 +111,6 @@ class BuildEngine {
 
             app.whenReady().then(() => {
                 createWindow();
-                
-                // Tray implementation
                 tray = new Tray(path.join(__dirname, 'icon.png'));
                 const contextMenu = Menu.buildFromTemplate([
                     { label: 'Show App', click: () => { win.show(); } },
@@ -163,7 +166,6 @@ const buildWorker = new Worker('build-queue', async (job) => {
             logAccumulator += `[ANDROID] Constructing source Gradle trees...\n`;
             await AndroidBuilder.generateProjectStructure(workspaceDir, project);
             
-            // Build mock assets (icon and splash placeholders)
             await fs.ensureDir(path.join(workspaceDir, 'app/src/main/res/drawable'));
             await fs.ensureDir(path.join(workspaceDir, 'app/src/main/res/mipmap-hdpi'));
             await fs.outputFile(path.join(workspaceDir, 'app/src/main/res/drawable/splash_logo.png'), 'MOCK_LOGO');
@@ -226,7 +228,6 @@ const buildWorker = new Worker('build-queue', async (job) => {
             const finalExePath = path.join(__dirname, `downloads/release_${buildId}.exe`);
             await fs.ensureDir(path.dirname(finalExePath));
             
-            // Look for compiled executable inside Electron-Builder dist directory
             const exeName = `${project.appName} Portable.exe`;
             await fs.copy(path.join(workspaceDir, 'dist', exeName), finalExePath);
 
@@ -259,6 +260,11 @@ const buildWorker = new Worker('build-queue', async (job) => {
         await fs.remove(workspaceDir).catch(() => {});
     }
 }, { connection: REDIS_CONNECTION });
+
+// CRITICAL: Catches Redis connection errors gracefully on the worker thread
+buildWorker.on('error', (err) => {
+    console.error("⚠️ BullMQ Worker Redis Connection Error:", err.message);
+});
 
 module.exports = {
     BuildEngine,

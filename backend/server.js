@@ -17,17 +17,28 @@ const cuid = require('cuid');
 const unzipper = require('unzipper');
 const simpleGit = require('simple-git');
 
+// --- CRITICAL UNCAUGHT EXCEPTION SAFETY HANDLERS ---
+// Prevents any runtime compilation, connection, or database errors from crashing the Node container process on Back4app.
+process.on('uncaughtException', (err) => {
+    console.error('🔥 CRITICAL UNCAUGHT EXCEPTION ENCOUNTERED:');
+    console.error(err.message);
+    console.error(err.stack);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('⚠️ UNHANDLED PROMISE REJECTION:');
+    console.error(reason);
+});
+
 const app = express();
 
 // --- CRITICAL SAFE-BOOT INITIALIZATION CHECK ---
-// Prevents the container from crashing instantly if the DB URI is missing on Back4app.
 const PORT = process.env.PORT || 8080;
 
 if (!process.env.MONGO_URI) {
     console.warn("⚠️ WARNING: MONGO_URI environment variable is missing!");
     console.warn("Please add MONGO_URI to your Back4App Container environment variables.");
     
-    // Boot a fallback page on port 8080 so the container becomes healthy and logs are visible
     app.get('*', (req, res) => {
         res.status(500).send(`
             <h1>WebHost is in Safe Mode</h1>
@@ -37,10 +48,10 @@ if (!process.env.MONGO_URI) {
     });
     
     app.listen(PORT, () => console.log(`🚀 Safe Mode server successfully listening on port ${PORT}`));
-    return; // Stop execution of the rest of the server setup to prevent throwing crashes
+    return; 
 }
 
-// --- DATABASE CONNECTION (Only runs if MONGO_URI exists) ---
+// --- DATABASE CONNECTION ---
 const { connectDatabase, User, Project, Build, Log } = require('./database');
 const { CloudinaryService, SecurityService, PackageNameService, LoggerService } = require('./services');
 const { BuildEngine } = require('./buildEngine');
@@ -49,7 +60,7 @@ connectDatabase(process.env.MONGO_URI);
 
 // --- SECURITY MIDDLEWARES ---
 app.use(helmet({
-    contentSecurityPolicy: false, // Disabled to support external resources loading within sandbox WebViews
+    contentSecurityPolicy: false, 
     crossOriginEmbedderPolicy: false
 }));
 app.use(cors());
@@ -58,7 +69,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Global Rate Limiting
 const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
+    windowMs: 15 * 60 * 1000, 
     max: 100,
     message: "Too many requests from this IP. Please try again later."
 });
@@ -154,7 +165,6 @@ const TEMPLATE_APK_PATH = path.join(APPS_DIR, 'webview_base_template.apk');
 const LOCAL_TEMPLATE_SOURCE = path.join(__dirname, 'your-template.apk');
 
 async function ensureBaseApkTemplate() {
-    // 1. If webview_base_template.apk exists in cache, make sure your-template.apk is copied to root for self-hosting
     if (await fs.pathExists(TEMPLATE_APK_PATH)) {
         if (!(await fs.pathExists(LOCAL_TEMPLATE_SOURCE))) {
             await fs.copy(TEMPLATE_APK_PATH, LOCAL_TEMPLATE_SOURCE);
@@ -162,7 +172,6 @@ async function ensureBaseApkTemplate() {
         return;
     }
 
-    // 2. If 'your-template.apk' exists locally in root (e.g. pushed via Git), copy to cached folder
     if (await fs.pathExists(LOCAL_TEMPLATE_SOURCE)) {
         console.log("📥 Copying local 'your-template.apk' from root workspace to compiler cache...");
         await fs.ensureDir(path.dirname(TEMPLATE_APK_PATH));
@@ -171,7 +180,6 @@ async function ensureBaseApkTemplate() {
         return;
     }
 
-    // 3. Fallback: Download from a stable, permanent WebView template archive and save/host it locally
     try {
         const fallbackUrl = 'https://raw.githubusercontent.com/bishwassagar/Android-Webview-App/master/app/release/app-release.apk';
         console.log(`📥 Base template missing. Downloading baseline APK template from secure fallback repository: ${fallbackUrl}`);
@@ -182,14 +190,9 @@ async function ensureBaseApkTemplate() {
         }
         
         const buffer = await response.arrayBuffer();
-        
-        // Save to compiled cache folder
         await fs.ensureDir(path.dirname(TEMPLATE_APK_PATH));
         await fs.writeFile(TEMPLATE_APK_PATH, Buffer.from(buffer));
-        
-        // Copy to root static folder so it is automatically hosted at /your-template.apk
         await fs.copy(TEMPLATE_APK_PATH, LOCAL_TEMPLATE_SOURCE);
-        
         console.log("✅ Baseline APK template compiled and cached successfully both in workspace and root directory.");
     } catch (err) {
         console.error("❌ Failed to resolve baseline APK template:", err.message);
@@ -197,7 +200,6 @@ async function ensureBaseApkTemplate() {
     }
 }
 
-// Trigger pre-fetch checks and self-hosting generation on server startup
 ensureBaseApkTemplate().catch(err => console.error("⚠️ Background template check skipped:", err.message));
 
 // =================================================================
@@ -679,5 +681,4 @@ app.get('*', (req, res) => {
 });
 
 // --- SERVER INITIALIZATION ---
-const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log("🚀 WebHost Core Engine operational on port " + PORT));
