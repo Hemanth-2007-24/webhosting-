@@ -1,107 +1,96 @@
 // =================================================================
-// ==                  WebHost Platform Server                    ==
+// ==                       server.js                             ==
 // =================================================================
 
 require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
-const path = require('path');
-const bcrypt = require('bcryptjs');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const multer = require('multer');
-const simpleGit = require('simple-git');
-const unzipper = require('unzipper');
+const path = require('path');
 const fs = require('fs-extra');
+const mongoose = require('mongoose');
 const cuid = require('cuid');
-const archiver = require('archiver');
-const AdmZip = require('adm-zip');
-const { execFile } = require('child_process');
+const unzipper = require('unzipper');
+const simpleGit = require('simple-git');
 
-// --- APP & MIDDLEWARE SETUP ---
 const app = express();
+
+// --- CRITICAL SAFE-BOOT INITIALIZATION CHECK ---
+// Prevents the container from crashing instantly if the DB URI is missing on Back4app.
+const PORT = process.env.PORT || 8080;
+
+if (!process.env.MONGO_URI) {
+    console.warn("⚠️ WARNING: MONGO_URI environment variable is missing!");
+    console.warn("Please add MONGO_URI to your Back4App Container environment variables.");
+    
+    // Boot a fallback page on port 8080 so the container becomes healthy and logs are visible
+    app.get('*', (req, res) => {
+        res.status(500).send(`
+            <h1>WebHost is in Safe Mode</h1>
+            <p><strong>Config Error:</strong> MONGO_URI is missing from your environment variables.</p>
+            <p>Please configure MONGO_URI inside your Back4App dashboard variables settings.</p>
+        `);
+    });
+    
+    app.listen(PORT, () => console.log(`🚀 Safe Mode server successfully listening on port ${PORT}`));
+    return; // Stop execution of the rest of the server setup to prevent throwing crashes
+}
+
+// --- DATABASE CONNECTION (Only runs if MONGO_URI exists) ---
+const { connectDatabase, User, Project, Build, Log } = require('./database');
+const { CloudinaryService, SecurityService, PackageNameService, LoggerService } = require('./services');
+const { BuildEngine } = require('./buildEngine');
+
+connectDatabase(process.env.MONGO_URI);
+
+// --- SECURITY MIDDLEWARES ---
+app.use(helmet({
+    contentSecurityPolicy: false, // Disabled to support external resources loading within sandbox WebViews
+    crossOriginEmbedderPolicy: false
+}));
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- DATABASE CONNECTION ---
-mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('✅ MongoDB Connected'))
-    .catch(err => console.error('❌ MongoDB Connection Error:', err));
-
-// --- DATABASE MODELS ---
-const UserSchema = new mongoose.Schema({ 
-    email: { type: String, required: true, unique: true, trim: true, lowercase: true }, 
-    password: { type: String, required: true },
-    githubPat: { type: String, default: '' }
+// Global Rate Limiting
+const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100,
+    message: "Too many requests from this IP. Please try again later."
 });
+app.use(globalLimiter);
 
-UserSchema.pre('save', async function(next) { if (this.isModified('password')) { this.password = await bcrypt.hash(this.password, 10); } next(); });
-const User = mongoose.model('User', UserSchema);
-
-const ProjectSchema = new mongoose.Schema({ 
-    name: { type: String, required: true }, 
-    subdomain: { type: String, required: true, unique: true }, 
-    owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, 
-    status: { type: String, enum: ['queued', 'deploying', 'ready', 'failed'], default: 'queued' },
-    rootDir: { type: String, default: '' },
-    
-    // Local app compiler state properties
-    appAndroidStatus: { type: String, enum: ['none', 'building', 'ready', 'failed'], default: 'none' },
-    appWindowsStatus: { type: String, enum: ['none', 'building', 'ready', 'failed'], default: 'none' },
-    appName: { type: String, default: '' }
-}, { timestamps: true });
-
-const Project = mongoose.model('Project', ProjectSchema);
-
-// --- AUTH MIDDLEWARE ---
-// NOTE: All auth failures here return 401, not 400. The frontend's apiFetch()
-// treats 401 specifically as "clear stored token + redirect to login" — that's
-// the correct behavior whether the header is simply missing OR the token it
-// contains is expired/invalid/tampered/signed-with-a-stale-secret. Previously
-// the invalid/expired branch returned 400, which the client couldn't
-// distinguish from an ordinary validation error, so a stale token was never
-// cleared and every subsequent request kept failing the same way until the
-// user manually logged out.
-const authMiddleware = (req, res, next) => { 
-    const authHeader = req.headers.authorization; 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) { 
-        return res.status(401).json({ message: 'Authorization denied, no token provided.' }); 
-    } 
-    try { 
-        const token = authHeader.split(' ')[1]; 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET); 
-        req.user = decoded; 
-        next(); 
-    } catch (e) { 
-        res.status(401).json({ message: 'Token is not valid.' }); 
-    }
-};
-
-// --- DIRECTORIES & FILE UPLOAD ---
+// File Upload configuration
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
-const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
-const APPS_DIR = path.join(__dirname, 'compiled_apps');
-
-fs.ensureDirSync(UPLOADS_DIR); 
-fs.ensureDirSync(DEPLOYMENTS_DIR); 
-fs.ensureDirSync(APPS_DIR); 
-
+fs.ensureDirSync(UPLOADS_DIR);
 const upload = multer({ dest: UPLOADS_DIR });
+
+// --- JWT AUTHENTICATION MIDDLEWARE ---
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ message: "Access Token missing." });
+
+    jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret_key', (err, user) => {
+        if (err) return res.status(403).json({ message: "Invalid or expired session token." });
+        req.user = user;
+        next();
+    });
+};
 
 // --- SMART INDEX FINDER SYSTEM ---
 async function findIndexHtmlRecursive(dir, currentDepth, maxDepth) {
     if (currentDepth > maxDepth) return null;
     const items = await fs.readdir(dir, { withFileTypes: true });
-    
-    // Check files in current folder first
     for (const item of items) {
         if (item.isFile() && item.name.toLowerCase() === 'index.html') {
             return dir;
         }
     }
-    
-    // Check nested folders, ignoring system folders
     for (const item of items) {
         if (item.isDirectory() && !['node_modules', '.git', '.github'].includes(item.name)) {
             const subPath = path.join(dir, item.name);
@@ -113,28 +102,22 @@ async function findIndexHtmlRecursive(dir, currentDepth, maxDepth) {
 }
 
 async function findIndexHtmlDir(basePath) { 
-    // 1. Check root directory
     if (await fs.pathExists(path.join(basePath, 'index.html'))) { 
         return basePath; 
     } 
-    
-    // 2. Check common output build subdirectories
     const commonDirs = ['dist', 'build', 'public', 'out']; 
-    for (const dir of commonDirs) { 
+    for (const dir of commonDirs) {
         const potentialPath = path.join(basePath, dir); 
         if (await fs.pathExists(path.join(potentialPath, 'index.html'))) { 
             return potentialPath; 
         } 
     } 
-    
-    // 3. Recursive lookup fallback (Up to 3 directories deep)
     try {
         const detectedPath = await findIndexHtmlRecursive(basePath, 0, 3);
         if (detectedPath) return detectedPath;
     } catch (error) {
         console.error("Smart Index Finder lookup error:", error);
     }
-    
     return basePath; 
 }
 
@@ -165,170 +148,298 @@ function zipDirectory(sourceDir, outPath) {
     });
 }
 
-// --- INITIALIZE GENERIC ANDROID WEBVIEW TEMPLATE APK ---
+// --- AUTOMATED ANDROID WEBVIEW TEMPLATE RESOLVER & CREATOR ---
+const APPS_DIR = path.join(__dirname, 'compiled_apps');
 const TEMPLATE_APK_PATH = path.join(APPS_DIR, 'webview_base_template.apk');
+const LOCAL_TEMPLATE_SOURCE = path.join(__dirname, 'your-template.apk');
 
-// The template used to live only at the jsDelivr URL below, which has since
-// gone 404 (the upstream repo restructured). Depending on one third-party
-// file at a hardcoded path with no fallback is what broke this feature in
-// the first place. BASE_APK_TEMPLATE_URL lets you point this at a copy you
-// control (e.g. a GitHub release asset in your own repo, or a Cloudinary
-// URL — cloudinary is already a dependency here) without editing code.
-// STRONGLY RECOMMENDED: build or download a working WebView-shell APK once,
-// host it yourself, and set BASE_APK_TEMPLATE_URL in your environment.
-const BASE_APK_CANDIDATE_URLS = [
-    process.env.BASE_APK_TEMPLATE_URL,
-    'https://cdn.jsdelivr.net/gh/mrepol742/web-appp@master/release/debug.apk' // legacy fallback — currently 404, kept only so old deploys don't hard-crash on the missing env var
-].filter(Boolean);
-
-// Robust download checker helper with promise resolution
 async function ensureBaseApkTemplate() {
-    if (await fs.pathExists(TEMPLATE_APK_PATH)) return;
-
-    if (!process.env.BASE_APK_TEMPLATE_URL) {
-        console.warn('[APK_TEMPLATE] BASE_APK_TEMPLATE_URL is not set — falling back to a legacy CDN link that is known to be broken. Set BASE_APK_TEMPLATE_URL to a template APK you host yourself.');
-    }
-
-    const failures = [];
-    for (const url of BASE_APK_CANDIDATE_URLS) {
-        try {
-            console.log(`📥 Baseline template APK missing or not yet cached. Fetching from ${url} ...`);
-            const response = await fetch(url);
-            if (!response.ok) {
-                failures.push(`${url} -> HTTP ${response.status}`);
-                continue;
-            }
-            const buffer = await response.arrayBuffer();
-            await fs.ensureDir(path.dirname(TEMPLATE_APK_PATH));
-            await fs.writeFile(TEMPLATE_APK_PATH, Buffer.from(buffer));
-            console.log('✅ Baseline APK template cached successfully.');
-            return;
-        } catch (err) {
-            failures.push(`${url} -> ${err.message}`);
+    // 1. If webview_base_template.apk exists in cache, make sure your-template.apk is copied to root for self-hosting
+    if (await fs.pathExists(TEMPLATE_APK_PATH)) {
+        if (!(await fs.pathExists(LOCAL_TEMPLATE_SOURCE))) {
+            await fs.copy(TEMPLATE_APK_PATH, LOCAL_TEMPLATE_SOURCE);
         }
+        return;
     }
 
-    throw new Error(`Unable to retrieve baseline APK template. Tried: ${failures.join(' | ') || 'no candidate URLs configured'}. Set BASE_APK_TEMPLATE_URL to a working, self-hosted template APK.`);
+    // 2. If 'your-template.apk' exists locally in root (e.g. pushed via Git), copy to cached folder
+    if (await fs.pathExists(LOCAL_TEMPLATE_SOURCE)) {
+        console.log("📥 Copying local 'your-template.apk' from root workspace to compiler cache...");
+        await fs.ensureDir(path.dirname(TEMPLATE_APK_PATH));
+        await fs.copy(LOCAL_TEMPLATE_SOURCE, TEMPLATE_APK_PATH);
+        console.log("✅ Local APK template copied successfully.");
+        return;
+    }
+
+    // 3. Fallback: Download from a stable, permanent WebView template archive and save/host it locally
+    try {
+        const fallbackUrl = 'https://raw.githubusercontent.com/bishwassagar/Android-Webview-App/master/app/release/app-release.apk';
+        console.log(`📥 Base template missing. Downloading baseline APK template from secure fallback repository: ${fallbackUrl}`);
+        
+        const response = await fetch(fallbackUrl);
+        if (!response.ok) {
+            throw new Error(`Fallback repository returned HTTP status: ${response.status}`);
+        }
+        
+        const buffer = await response.arrayBuffer();
+        
+        // Save to compiled cache folder
+        await fs.ensureDir(path.dirname(TEMPLATE_APK_PATH));
+        await fs.writeFile(TEMPLATE_APK_PATH, Buffer.from(buffer));
+        
+        // Copy to root static folder so it is automatically hosted at /your-template.apk
+        await fs.copy(TEMPLATE_APK_PATH, LOCAL_TEMPLATE_SOURCE);
+        
+        console.log("✅ Baseline APK template compiled and cached successfully both in workspace and root directory.");
+    } catch (err) {
+        console.error("❌ Failed to resolve baseline APK template:", err.message);
+        throw new Error("Unable to retrieve baseline APK template. Please place a valid APK inside your root folder named 'your-template.apk' and push via Git.");
+    }
 }
 
-// Trigger background download on server startup
-ensureBaseApkTemplate().catch(err => console.error("⚠️ Background template pre-fetch failed:", err.message));
+// Trigger pre-fetch checks and self-hosting generation on server startup
+ensureBaseApkTemplate().catch(err => console.error("⚠️ Background template check skipped:", err.message));
 
-// --- OPTIONAL DEBUG SIGNING (only runs if a keystore + jarsigner are configured) ---
-// APKs are validated against a signature block computed over the exact file bytes.
-// Editing a signed template APK — even correctly, via a real zip writer — breaks
-// that signature, so Android will refuse to install it ("app not installed")
-// unless it gets re-signed. This project can't ship a private key, so signing is
-// optional and only kicks in if you set these env vars on your own server
-// (requires a JDK on PATH): DEBUG_KEYSTORE_PATH, DEBUG_KEYSTORE_PASS, DEBUG_KEY_ALIAS
-function signApkIfConfigured(apkPath) {
-    return new Promise((resolve) => {
-        const keystore = process.env.DEBUG_KEYSTORE_PATH;
-        const storePass = process.env.DEBUG_KEYSTORE_PASS;
-        const alias = process.env.DEBUG_KEY_ALIAS || 'androiddebugkey';
-        if (!keystore || !storePass) {
-            console.warn('[APK_SIGN] No DEBUG_KEYSTORE_PATH/DEBUG_KEYSTORE_PASS configured — APK will be left unsigned and will need manual signing (jarsigner/apksigner) before install.');
-            return resolve(false);
+// =================================================================
+// ==                     AUTH API ENDPOINTS                      ==
+// =================================================================
+
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password || password.length < 6) {
+            return res.status(400).json({ message: "Invalid email structure or password length (min 6 chars)." });
         }
-        execFile('jarsigner', [
-            '-verbose',
-            '-sigalg', 'SHA256withRSA',
-            '-digestalg', 'SHA-256',
-            '-keystore', keystore,
-            '-storepass', storePass,
-            apkPath,
-            alias
-        ], (err) => {
-            if (err) {
-                console.error('[APK_SIGN] jarsigner failed, APK left unsigned:', err.message);
-                return resolve(false);
-            }
-            console.log('[APK_SIGN] APK re-signed successfully with debug keystore.');
-            resolve(true);
+
+        const existing = await User.findOne({ email });
+        if (existing) return res.status(400).json({ message: "User account already exists." });
+
+        const user = new User({ email, password });
+        await user.save();
+        await LoggerService.log('USER_REGISTERED', `Registered Account: ${email}`, user._id);
+        res.status(201).json({ message: "User account created successfully." });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        const user = await User.findOne({ email });
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+            return res.status(400).json({ message: "Invalid email or credentials." });
+        }
+
+        const accessToken = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET || 'fallback_secret_key', { expiresIn: '1h' });
+        const refreshToken = jwt.sign({ id: user._id }, process.env.REFRESH_SECRET || 'refresh_secret_key', { expiresIn: '7d' });
+
+        user.refreshToken = refreshToken;
+        await user.save();
+
+        await LoggerService.log('USER_LOGIN', `Logged In Account: ${email}`, user._id);
+        res.json({ accessToken, refreshToken });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.post('/api/auth/refresh', async (req, res) => {
+    const { token } = req.body;
+    if (!token) return res.status(401).json({ message: "Refresh Token missing." });
+    try {
+        const user = await User.findOne({ refreshToken: token });
+        if (!user) return res.status(403).json({ message: "Invalid session." });
+
+        jwt.verify(token, process.env.REFRESH_SECRET || 'refresh_secret_key', (err, decoded) => {
+            if (err) return res.status(403).json({ message: "Session expired." });
+            const accessToken = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET || 'fallback_secret_key', { expiresIn: '1h' });
+            res.json({ accessToken });
         });
-    });
-}
-
-// --- REAL APK PATCHER ---
-// Unlike naively concatenating bytes onto the raw APK file (which corrupts the
-// zip's central directory and produces a file nothing can open), this opens the
-// template as an actual zip, writes the config and any user-supplied assets as
-// real entries, and re-serializes a valid archive.
-async function buildAndroidApk({ targetUrl, appName, iconFilePath, extraFilePaths, outPath }) {
-    await ensureBaseApkTemplate();
-    if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
-        throw new Error('Baseline template APK was not cached on server.');
+    } catch (err) {
+        res.status(500).json({ message: err.message });
     }
+});
 
-    const zip = new AdmZip(TEMPLATE_APK_PATH);
-
-    // Config the WebView shell reads at runtime (a packaged asset, not appended bytes)
-    const config = {
-        url: targetUrl,
-        title: appName,
-        generatedAt: new Date().toISOString()
-    };
-    zip.addFile('assets/webhost_config.json', Buffer.from(JSON.stringify(config, null, 2), 'utf8'));
-
-    if (iconFilePath && await fs.pathExists(iconFilePath)) {
-        const iconBuffer = await fs.readFile(iconFilePath);
-        zip.addFile('assets/webhost_icon.png', iconBuffer);
+app.post('/api/auth/logout', authenticateToken, async (req, res) => {
+    try {
+        await User.findByIdAndUpdate(req.user.id, { refreshToken: '' });
+        res.json({ message: "Logged out cleanly." });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
     }
+});
 
-    if (Array.isArray(extraFilePaths)) {
-        for (const filePath of extraFilePaths) {
-            if (!(await fs.pathExists(filePath))) continue;
-            const safeName = path.basename(filePath).replace(/[^a-zA-Z0-9._-]/g, '_');
-            const buffer = await fs.readFile(filePath);
-            zip.addFile(`assets/user_files/${safeName}`, buffer);
+// =================================================================
+// ==                   PROJECT API ENDPOINTS                     ==
+// =================================================================
+
+app.post('/api/projects', authenticateToken, async (req, res) => {
+    try {
+        const name = req.body.projectName || req.body.name;
+        const websiteUrl = req.body.websiteUrl || 'https://o4dhomepage.onrender.com/c.html';
+        const platform = req.body.platform || 'android';
+
+        if (!name || name.trim().length < 3) {
+            return res.status(400).json({ message: "Project name must be at least 3 characters." });
         }
-    }
 
-    await fs.ensureDir(path.dirname(outPath));
-    zip.writeZip(outPath);
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ message: "Creator account not found." });
 
-    const signed = await signApkIfConfigured(outPath);
-    return { signed };
-}
+        const username = user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const containerName = name.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const subdomain = `${username}-${containerName}`;
 
-// =================================================================
-// ==                         API ROUTES                          ==
-// =================================================================
+        const appName = req.body.appName || name;
+        const packageName = PackageNameService.generatePackageName(appName);
 
-app.post('/api/auth/register', async (req, res) => { 
-    try { 
-        const { email, password } = req.body; 
-        if (!email || !password || password.length < 6) { 
-            return res.status(400).json({ message: 'Invalid email or password (min 6 chars).' }); 
-        } 
-        if (await User.findOne({ email })) { 
-            return res.status(400).json({ message: 'User with this email already exists.' }); 
-        } 
-        const user = new User({ email, password }); 
-        await user.save(); 
-        res.status(201).json({ message: 'User registered successfully.' }); 
-    } catch (error) { 
-        console.error("Register Error:", error); 
-        res.status(500).json({ message: 'Server error during registration.' }); 
-    }
-});
+        const project = new Project({
+            projectName: name,
+            subdomain,
+            websiteUrl,
+            packageName,
+            appName,
+            platform,
+            themeColor: req.body.themeColor || '#6366F1',
+            permissions: req.body.permissions || { internet: true },
+            createdBy: req.user.id,
+            status: 'ready'
+        });
 
-app.post('/api/auth/login', async (req, res) => { 
-    try { 
-        const { email, password } = req.body; 
-        const user = await User.findOne({ email }); 
-        if (!user || !(await bcrypt.compare(password, user.password))) { 
-            return res.status(400).json({ message: 'Invalid credentials.' }); 
-        } 
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' }); 
-        res.json({ token }); 
-    } catch (error) { 
-        console.error("Login Error:", error); 
-        res.status(500).json({ message: 'Server error during login.' }); 
+        await project.save();
+        await LoggerService.log('PROJECT_CREATED', `Project ${name} initiated.`, req.user.id, project._id);
+        res.status(201).json(project);
+    } catch (err) {
+        console.error("Create Project Error:", err);
+        res.status(500).json({ message: err.message });
     }
 });
 
-app.get('/api/user/pat', authMiddleware, async (req, res) => {
+app.get('/api/projects', authenticateToken, async (req, res) => {
+    try {
+        const filter = { createdBy: req.user.id, isArchived: false };
+        if (req.query.search) {
+            filter.projectName = { $regex: req.query.search, $options: 'i' };
+        }
+        const projects = await Project.find(filter).sort({ createdAt: -1 });
+        res.json(projects);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.get('/api/projects/:id', authenticateToken, async (req, res) => {
+    try {
+        const project = await Project.findOne({ _id: req.params.id, createdBy: req.user.id });
+        if (!project) return res.status(404).json({ message: "Project not found." });
+        res.json(project);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.put('/api/projects/:id', authenticateToken, async (req, res) => {
+    try {
+        const updated = await Project.findOneAndUpdate(
+            { _id: req.params.id, createdBy: req.user.id },
+            req.body,
+            { new: true }
+        );
+        if (!updated) return res.status(404).json({ message: "Project not found." });
+        res.json(updated);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.delete('/api/projects/:id', authenticateToken, async (req, res) => {
+    try {
+        const deleted = await Project.findOneAndDelete({ _id: req.params.id, createdBy: req.user.id });
+        if (!deleted) return res.status(404).json({ message: "Project not found." });
+        res.json({ message: "Project deleted permanently." });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// --- CLOUDINARY UPLOADS ON PROJECTS ---
+app.post('/api/projects/:id/upload-assets', authenticateToken, upload.fields([{ name: 'icon' }, { name: 'splash' }]), async (req, res) => {
+    try {
+        const project = await Project.findOne({ _id: req.params.id, createdBy: req.user.id });
+        if (!project) return res.status(404).json({ message: "Project not found." });
+
+        if (req.files['icon']) {
+            const iconRes = await CloudinaryService.uploadImage(req.files['icon'][0].path, 'icons');
+            project.iconUrl = iconRes.url;
+            await fs.remove(req.files['icon'][0].path);
+        }
+
+        if (req.files['splash']) {
+            const splashRes = await CloudinaryService.uploadImage(req.files['splash'][0].path, 'splashes');
+            project.splashUrl = splashRes.url;
+            await fs.remove(req.files['splash'][0].path);
+        }
+
+        await project.save();
+        res.json(project);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// =================================================================
+// ==                 CUSTOM CODE API ENDPOINTS                   ==
+// =================================================================
+
+app.post('/api/project/:id/custom-code', authenticateToken, async (req, res) => {
+    try {
+        const { customCode } = req.body;
+        const sanitized = SecurityService.sanitizeCustomCode(customCode);
+
+        const project = await Project.findOneAndUpdate(
+            { _id: req.params.id, createdBy: req.user.id },
+            { customCode: sanitized },
+            { new: true }
+        );
+        if (!project) return res.status(404).json({ message: "Project instance invalid." });
+
+        await LoggerService.log('CUSTOM_CODE_UPDATE', `Injected code saved on project: ${project.projectName}`, req.user.id, project._id);
+        res.json({ message: "Custom Code injected and verified.", project });
+    } catch (err) {
+        res.status(400).json({ message: err.message });
+    }
+});
+
+app.get('/api/project/:id/custom-code', authenticateToken, async (req, res) => {
+    try {
+        const project = await Project.findOne({ _id: req.params.id, createdBy: req.user.id });
+        if (!project) return res.status(404).json({ message: "Project instance invalid." });
+        res.json({ customCode: project.customCode });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.delete('/api/project/:id/custom-code', authenticateToken, async (req, res) => {
+    try {
+        const project = await Project.findOneAndUpdate(
+            { _id: req.params.id, createdBy: req.user.id },
+            { customCode: '' },
+            { new: true }
+        );
+        if (!project) return res.status(404).json({ message: "Project instance invalid." });
+        res.json({ message: "Custom Code cleared successfully.", project });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// =================================================================
+// ==               USER PROFILE / CREDENTIAL DETAILS             ==
+// =================================================================
+
+app.get('/api/user/pat', authenticateToken, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
         res.json({ pat: user ? user.githubPat || '' : '' });
@@ -338,7 +449,7 @@ app.get('/api/user/pat', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/user/pat', authMiddleware, async (req, res) => {
+app.post('/api/user/pat', authenticateToken, async (req, res) => {
     try {
         const { pat } = req.body;
         await User.findByIdAndUpdate(req.user.id, { githubPat: pat || '' });
@@ -349,7 +460,7 @@ app.post('/api/user/pat', authMiddleware, async (req, res) => {
     }
 });
 
-app.get('/api/user/repos', authMiddleware, async (req, res) => {
+app.get('/api/user/repos', authenticateToken, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
         if (!user || !user.githubPat) {
@@ -387,367 +498,186 @@ app.get('/api/user/repos', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/projects', authMiddleware, async (req, res) => { 
-    try { 
-        const { name } = req.body; 
-        if (!name || name.trim().length < 3) { 
-            return res.status(400).json({ message: 'Project name must be at least 3 characters.' }); 
-        } 
-        const subdomain = name.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 20) + '-' + cuid.slug(); 
-        if (await Project.findOne({ subdomain })) { 
-            return res.status(400).json({ message: 'A project with a similar name already exists.' }); 
-        } 
-        const project = new Project({ name, subdomain, owner: req.user.id, status: 'queued' }); 
-        await project.save(); 
-        res.status(201).json(project); 
-    } catch (error) { 
-        console.error("Create Project Error:", error); 
-        res.status(500).json({ message: 'Server error creating project.' }); 
+// =================================================================
+// ==                    BUILD ENGINE API                         ==
+// =================================================================
+
+app.post('/api/builds/trigger', authenticateToken, async (req, res) => {
+    const { projectId, platform } = req.body;
+    try {
+        const project = await Project.findOne({ _id: projectId, createdBy: req.user.id });
+        if (!project) return res.status(404).json({ message: "Project not found." });
+
+        const build = await BuildEngine.enqueueBuild(projectId, platform);
+        res.status(202).json({ message: "App compilation pipeline queued.", buildId: build._id });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
     }
 });
 
-app.get('/api/projects', authMiddleware, async (req, res) => { 
-    try { 
-        const projects = await Project.find({ owner: req.user.id }).sort({ createdAt: -1 }); 
-        res.json(projects); 
-    } catch (error) { 
-        console.error("Get Projects Error:", error); 
-        res.status(500).json({ message: 'Server error fetching projects.' }); 
+app.get('/api/builds/:id/logs', authenticateToken, async (req, res) => {
+    try {
+        const build = await Build.findById(req.params.id);
+        if (!build) return res.status(404).json({ message: "Compilation logs not found." });
+        res.json({ status: build.status, logs: build.logs });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
     }
 });
 
-app.delete('/api/projects/:id', authMiddleware, async (req, res) => { 
-    try { 
-        const projectId = req.params.id; 
-        const project = await Project.findById(projectId); 
-        if (!project) { 
-            return res.status(404).json({ message: 'Project not found.' }); 
-        } 
-        if (project.owner.toString() !== req.user.id) { 
-            return res.status(403).json({ message: 'Forbidden: You do not own this project.' }); 
-        } 
-        const projectDeployPath = path.join(DEPLOYMENTS_DIR, project.id); 
-        await fs.remove(projectDeployPath); 
-        console.log(`[${project.name}] --> Files deleted from disk at ${projectDeployPath}`); 
-        await Project.findByIdAndDelete(projectId); 
-        console.log(`[${project.name}] --> Record deleted from database.`); 
-        res.status(204).send(); 
-    } catch (error) { 
-        console.error("Delete Project Error:", error); 
-        res.status(500).json({ message: 'Server error while deleting project.' }); 
+app.get('/api/builds/download/:id/:platform', async (req, res) => {
+    const { id, platform } = req.params;
+    const extension = platform === 'android' ? '.apk' : '.exe';
+    const filePath = path.join(__dirname, `compiled_apps/downloads/release_${id}${extension}`);
+
+    if (!(await fs.pathExists(filePath))) {
+        return res.status(404).send("Application artifact was not found or is currently packaging.");
     }
+    res.download(filePath, `release_${id}${extension}`);
 });
 
-app.post('/api/deploy', authMiddleware, upload.single('file'), async (req, res) => { 
-    const { projectId, gitURL, rootDir } = req.body; 
-    let project; 
-    try { 
-        project = await Project.findById(projectId); 
-        if (!project || project.owner.toString() !== req.user.id) { 
-            return res.status(404).json({ message: 'Project not found or you are not the owner.' }); 
-        } 
+// =================================================================
+// ==           STATIC WEBSITE DEPLOYMENT PIPELINE ROUTE          ==
+// =================================================================
+
+app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, res) => {
+    const { projectId, gitURL, rootDir } = req.body;
+    let project;
+    try {
+        project = await Project.findById(projectId);
+        if (!project || project.createdBy.toString() !== req.user.id) {
+            return res.status(404).json({ message: 'Project not found or unauthorized.' });
+        }
         
-        const normalizedRootDir = rootDir !== undefined ? rootDir.trim() : project.rootDir;
-        await project.updateOne({ status: 'deploying', rootDir: normalizedRootDir }); 
-        console.log(`[${project.name}] --> Deployment started.`); 
-        res.status(202).json({ message: 'Deployment accepted and is in progress.' }); 
+        await project.updateOne({ status: 'deploying' });
+        console.log(`[${project.projectName}] --> Deployment started.`);
+        res.status(202).json({ message: 'Deployment accepted and is in progress.' });
         
-        const projectDeployPath = path.join(DEPLOYMENTS_DIR, project.id); 
-        console.log(`[${project.name}] STEP 1: Cleaning up old deployment at ${projectDeployPath}`); 
-        await fs.ensureDir(projectDeployPath); 
-        await fs.emptyDir(projectDeployPath); 
+        const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
+        const projectDeployPath = path.join(DEPLOYMENTS_DIR, project._id.toString());
+        console.log(`[${project.projectName}] STEP 1: Cleaning up old deployment at ${projectDeployPath}`);
+        await fs.ensureDir(projectDeployPath);
+        await fs.emptyDir(projectDeployPath);
         
-        if (gitURL) { 
-            console.log(`[${project.name}] STEP 2: Preparing cloning URL.`); 
-            const tempCloneDir = path.join(UPLOADS_DIR, `_temp_git_${project.id}`); 
-            await fs.emptyDir(tempCloneDir); 
+        if (gitURL) {
+            console.log(`[${project.projectName}] STEP 2: Preparing cloning URL.`);
+            const tempCloneDir = path.join(UPLOADS_DIR, `_temp_git_${project._id}`);
+            await fs.emptyDir(tempCloneDir);
             
-            const user = await User.findById(req.user.id); 
-            const pat = user ? user.githubPat : ''; 
-            let cloneURL = gitURL; 
+            const user = await User.findById(req.user.id);
+            const pat = user ? user.githubPat : '';
+            let cloneURL = gitURL;
             
-            if (pat && gitURL.includes('github.com')) { 
-                if (gitURL.startsWith('https://')) { 
-                    cloneURL = gitURL.replace('https://', `https://${pat}@`); 
-                } else if (!gitURL.startsWith('http')) { 
-                    cloneURL = `https://${pat}@github.com/${gitURL.replace(/^github\.com\//, '')}`; 
-                } 
-            } 
+            if (pat && gitURL.includes('github.com')) {
+                if (gitURL.startsWith('https://')) {
+                    cloneURL = gitURL.replace('https://', `https://${pat}@`);
+                } else if (!gitURL.startsWith('http')) {
+                    cloneURL = `https://${pat}@github.com/${gitURL.replace(/^github\.com\//, '')}`;
+                }
+            }
             
-            console.log(`[${project.name}] ... Cloning repository.`); 
-            await simpleGit().clone(cloneURL, tempCloneDir, { '--depth': 1 }); 
-            console.log(`[${project.name}] ... Git clone successful.`); 
+            console.log(`[${project.projectName}] ... Cloning repository.`);
+            await simpleGit().clone(cloneURL, tempCloneDir, { '--depth': 1 });
+            console.log(`[${project.projectName}] ... Git clone successful.`);
             
-            // Resolve starting path cleanly
             let startPath = tempCloneDir;
-            if (normalizedRootDir) {
-                const resolvedPath = path.resolve(tempCloneDir, normalizedRootDir);
+            if (rootDir) {
+                const resolvedPath = path.resolve(tempCloneDir, rootDir.trim());
                 if (!resolvedPath.startsWith(tempCloneDir)) {
                     throw new Error("Security Violation: Target path escapes deployment directory.");
                 }
                 startPath = resolvedPath;
                 if (!(await fs.pathExists(startPath))) {
-                    throw new Error(`The configured root directory '${normalizedRootDir}' does not exist inside the repository.`);
+                    throw new Error(`The configured root directory '${rootDir}' does not exist inside the repository.`);
                 }
             }
             
-            // Run Smart Index Finder starting from the resolved start folder
             const sourceDir = await findIndexHtmlDir(startPath);
-            
-            console.log(`[${project.name}] STEP 3: Deploying from directory containing index.html: ${sourceDir}`); 
-            await fs.copy(sourceDir, projectDeployPath); 
-            console.log(`[${project.name}] STEP 4: Copied files to final deployment directory.`); 
-            await fs.remove(tempCloneDir); 
-        } else if (req.file) { 
-            console.log(`[${project.name}] STEP 2: Preparing extraction workspace.`); 
-            const tempExtractDir = path.join(UPLOADS_DIR, `_temp_zip_${project.id}`); 
-            await fs.ensureDir(tempExtractDir); 
-            await fs.emptyDir(tempExtractDir); 
+            console.log(`[${project.projectName}] STEP 3: Deploying from directory containing index.html: ${sourceDir}`);
+            await fs.copy(sourceDir, projectDeployPath);
+            await fs.remove(tempCloneDir);
+        } else if (req.file) {
+            console.log(`[${project.projectName}] STEP 2: Preparing extraction workspace.`);
+            const tempExtractDir = path.join(UPLOADS_DIR, `_temp_zip_${project._id}`);
+            await fs.ensureDir(tempExtractDir);
+            await fs.emptyDir(tempExtractDir);
 
-            // Extract file using standard promise open file methods
-            console.log(`[${project.name}] ... Extracting zip archive.`); 
+            console.log(`[${project.projectName}] ... Extracting zip archive.`);
             const zipArchive = await unzipper.Open.file(req.file.path);
             await zipArchive.extract({ path: tempExtractDir });
-            console.log(`[${project.name}] ... Unzip successful.`); 
-            await fs.remove(req.file.path); 
+            console.log(`[${project.projectName}] ... Unzip successful.`);
+            await fs.remove(req.file.path);
 
-            // Resolve target directory path
             let startPath = tempExtractDir;
-            if (normalizedRootDir) {
-                const resolvedPath = path.resolve(tempExtractDir, normalizedRootDir);
+            if (rootDir) {
+                const resolvedPath = path.resolve(tempExtractDir, rootDir.trim());
                 if (!resolvedPath.startsWith(tempExtractDir)) {
                     throw new Error("Security Violation: Target path escapes deployment directory.");
                 }
                 startPath = resolvedPath;
-                if (!(await fs.pathExists(startPath))) {
-                    throw new Error(`The configured root directory '${normalizedRootDir}' does not exist inside the archive.`);
+                if (!(await fs.pathExists(rootDir))) {
+                    throw new Error(`The configured root directory '${rootDir}' does not exist inside the archive.`);
                 }
             }
 
-            // Run Smart Index Finder on Zip exactly like Git workflow
             const sourceDir = await findIndexHtmlDir(startPath);
-            console.log(`[${project.name}] STEP 3: Deploying from directory containing index.html: ${sourceDir}`); 
-            await fs.copy(sourceDir, projectDeployPath); 
-            console.log(`[${project.name}] STEP 4: Copied files to final deployment directory.`); 
-            await fs.remove(tempExtractDir); 
-        } else { 
-            throw new Error("No Git URL or file was provided for deployment."); 
-        } 
-        await project.updateOne({ status: 'ready' }); 
-        console.log(`[${project.name}] --> ✅ Deployment Succeeded. Status set to 'ready'.`); 
-    } catch (error) { 
-        console.error(`[${project ? project.name : projectId}] --> ❌ Critical deployment failure:`, error.message); 
-        console.error(error.stack); 
-        if (project) { 
-            await project.updateOne({ status: 'failed' }); 
-            console.log(`[${project.name}] ... Status updated to 'failed'.`); 
-        } 
-    }
-});
-
-// --- NATIVE WEBVIEW APP COMPILER ROUTE (APK CONFIG INJECTION & SILENT VBS BUNDLING) ---
-app.post('/api/projects/:id/build-app', authMiddleware, upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'files', maxCount: 10 }]), async (req, res) => {
-    const { platform, appName } = req.body;
-    const iconFile = req.files && req.files.icon ? req.files.icon[0] : null;
-    const extraFiles = (req.files && req.files.files) || [];
-    const projectId = req.params.id;
-
-    if (!platform || !['android', 'windows'].includes(platform)) {
-        return res.status(400).json({ message: 'Invalid platform configuration.' });
-    }
-
-    const cleanAppName = (appName || 'Web Launcher').trim();
-    if (cleanAppName.length < 2) {
-        return res.status(400).json({ message: 'Application name is too short.' });
-    }
-
-    try {
-        const project = await Project.findById(projectId);
-        if (!project || project.owner.toString() !== req.user.id) {
-            return res.status(404).json({ message: 'Instance not found or unauthorized.' });
+            console.log(`[${project.projectName}] STEP 3: Deploying from directory containing index.html: ${sourceDir}`);
+            await fs.copy(sourceDir, projectDeployPath);
+            await fs.remove(tempExtractDir);
+        } else {
+            throw new Error("No Git URL or file was provided for deployment.");
         }
-
-        const updateField = platform === 'android' ? { appAndroidStatus: 'building', appName: cleanAppName } : { appWindowsStatus: 'building', appName: cleanAppName };
-        await Project.findByIdAndUpdate(projectId, updateField);
-
-        console.log(`[${project.name}] --> Compiling borderless native WebView container for: ${platform}`);
-        res.status(202).json({ message: 'Native WebView compilation sequence active.' });
-
-        // Background compile task
-        setTimeout(async () => {
-            const finalPackagePath = path.join(APPS_DIR, `${project.subdomain}_${platform}`);
-            
-            try {
-                const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
-
-                if (platform === 'windows') {
-                    // Create silent native VBScript wrapper directly to run natively without EXE header errors
-                    const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
-                    await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
-                    
-                    await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
-                    console.log(`[${project.name}] Windows Desktop launcher VBS compiled successfully.`);
-
-                } else if (platform === 'android') {
-                    // Proper zip-level patch — writes real entries instead of
-                    // corrupting the archive by appending raw bytes to the end.
-                    const { signed } = await buildAndroidApk({
-                        targetUrl: targetProjectUrl,
-                        appName: cleanAppName,
-                        iconFilePath: iconFile ? iconFile.path : null,
-                        extraFilePaths: extraFiles.map(f => f.path),
-                        outPath: `${finalPackagePath}.apk`
-                    });
-
-                    await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
-                    console.log(`[${project.name}] Android WebView APK compiled successfully.${signed ? '' : ' (unsigned — configure DEBUG_KEYSTORE_PATH to auto-sign)'}`);
-                }
-
-                if (iconFile) await fs.remove(iconFile.path);
-                for (const f of extraFiles) await fs.remove(f.path);
-            } catch (err) {
-                console.error(`Native App Compilation failure for project ${project.name}:`, err);
-                const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
-                await Project.findByIdAndUpdate(projectId, failField);
-                if (iconFile) await fs.remove(iconFile.path).catch(() => {});
-                for (const f of extraFiles) await fs.remove(f.path).catch(() => {});
-            }
-        }, 10000);
-
-    } catch (err) {
-        console.error("App Build Request failure:", err);
-        res.status(500).json({ message: 'Internal Server Error.' });
-    }
-});
-
-// --- D_I_R_E_C_T WEB-TO-APP STANDALONE CONVERTER ROUTE ---
-app.post('/api/build-app-direct', authMiddleware, upload.fields([{ name: 'icon', maxCount: 1 }, { name: 'files', maxCount: 10 }]), async (req, res) => {
-    const { url, platform, appName } = req.body;
-    const iconFile = req.files && req.files.icon ? req.files.icon[0] : null;
-    const extraFiles = (req.files && req.files.files) || [];
-
-    if (!url || !platform || !appName) {
-        return res.status(400).json({ message: 'Missing app compiling parameters.' });
-    }
-
-    const cleanAppName = appName.trim();
-    if (cleanAppName.length < 2) {
-        return res.status(400).json({ message: 'Application name is too short.' });
-    }
-
-    const appFilename = `direct_${cuid()}_${platform}`;
-    const finalPackagePath = path.join(APPS_DIR, appFilename);
-
-    try {
-        console.log(`[DIRECT_BUILD] --> Compiling native WebView wrapper directly for URL: ${url}`);
-
-        if (platform === 'windows') {
-            const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${url} --window-size=1280,800", 0, false\n`;
-            await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
-            console.log(`[DIRECT_BUILD] Direct VBScript launcher packaged successfully.`);
-        } else if (platform === 'android') {
-            // Proper zip-level patch — see buildAndroidApk() for why raw byte
-            // appending was corrupting every APK produced by this route.
-            const { signed } = await buildAndroidApk({
-                targetUrl: url,
-                appName: cleanAppName,
-                iconFilePath: iconFile ? iconFile.path : null,
-                extraFilePaths: extraFiles.map(f => f.path),
-                outPath: `${finalPackagePath}.apk`
-            });
-            console.log(`[DIRECT_BUILD] Direct Android WebView APK compiled successfully.${signed ? '' : ' (unsigned)'}`);
+        
+        await project.updateOne({ status: 'ready' });
+        console.log(`[${project.projectName}] --> ✅ Deployment Succeeded. Status set to 'ready'.`);
+    } catch (error) {
+        console.error(`[${project ? project.projectName : projectId}] --> ❌ Critical deployment failure:`, error.message);
+        if (project) {
+            await project.updateOne({ status: 'failed' });
         }
-
-        if (iconFile) await fs.remove(iconFile.path);
-        for (const f of extraFiles) await fs.remove(f.path);
-
-        const downloadUrl = `/api/download-app-direct/${appFilename}/${platform}`;
-        res.json({ downloadUrl });
-    } catch (err) {
-        console.error("Direct app compilation failure:", err);
-        if (iconFile) await fs.remove(iconFile.path).catch(() => {});
-        for (const f of extraFiles) await fs.remove(f.path).catch(() => {});
-        res.status(500).json({ message: `App compilation pipeline failed: ${err.message}` });
     }
 });
 
-// --- DOWNLOAD DIRECTLY COMPILED NATIVE APP PACKAGES WITH CUSTOM USER FILENAMES ---
-app.get('/api/download-app-direct/:filename/:platform', async (req, res) => {
-    const { filename, platform } = req.params;
-    const extension = platform === 'android' ? '.apk' : '.vbs';
-    const absoluteFilePath = path.join(APPS_DIR, filename + extension);
+// =================================================================
+// ==      PATH-BASED DEPLOYMENT ROUTING & FRONTEND SERVING       ==
+// =================================================================
 
-    if (!(await fs.pathExists(absoluteFilePath))) {
-        return res.status(404).send('Compiled application binary package was not found.');
-    }
-
-    // Sanitize and use custom name if passed in query parameters
-    const customAppName = req.query.name || 'compiled_launcher';
-    const cleanDownloadName = customAppName.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+// 1. Route requests to deployed project subdomains (e.g., /test-subdomain)
+app.use(async (req, res, next) => {
+    if (req.path.startsWith('/api/')) return next();
+    const projectIdentifier = req.path.split('/')[1];
+    if (!projectIdentifier) return next();
     
-    res.download(absoluteFilePath, `${cleanDownloadName}${extension}`);
-});
-
-// --- DOWNLOAD COMPILED NATIVE APP PACKAGES WITH CUSTOM INSTANCE APP FILENAMES ---
-app.get('/api/projects/:id/download-app/:platform', async (req, res) => {
-    const projectId = req.params.id;
-    const platform = req.params.platform;
-
-    if (!['android', 'windows'].includes(platform)) {
-        return res.status(400).send('Invalid platform parameters.');
-    }
-
     try {
-        const project = await Project.findById(projectId);
-        if (!project) return res.status(404).send('Project instance mapping does not exist.');
-
-        const extension = platform === 'android' ? '.apk' : '.vbs';
-        const absoluteFilePath = path.join(APPS_DIR, `${project.subdomain}_${platform}${extension}`);
-
-        if (!(await fs.pathExists(absoluteFilePath))) {
-            return res.status(404).send('Compiled application binary package was not found.');
+        const ProjectModel = mongoose.model('Project'); // Safely retrieve compiled model reference
+        const project = await ProjectModel.findOne({ subdomain: projectIdentifier, status: 'ready' });
+        
+        if (project) {
+            const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
+            const projectPath = path.join(DEPLOYMENTS_DIR, project._id.toString());
+            req.url = req.url.replace(`/${projectIdentifier}`, '') || '/';
+            return express.static(projectPath)(req, res, () => {
+                res.sendFile(path.join(projectPath, 'index.html'));
+            });
         }
-
-        // Sanitize and use the specific appName or projectName configured on project card
-        const customAppName = project.appName || project.name;
-        const cleanDownloadName = customAppName.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
-
-        res.download(absoluteFilePath, `${cleanDownloadName}${extension}`);
-    } catch (err) {
-        console.error("Download delivery failure:", err);
-        res.status(500).send('Server Error.');
+        return next();
+    } catch (error) {
+        console.error("Path-based Proxy Error:", error);
+        return res.status(500).send('Server error.');
     }
 });
 
-// =================================================================
-// ==      PATH-BASED ROUTING & SERVING LOGIC                     ==
-// =================================================================
-app.use(async (req, res, next) => { 
-    if (req.path.startsWith('/api/')) return next(); 
-    const projectIdentifier = req.path.split('/')[1]; 
-    if (!projectIdentifier) return next(); 
-    try { 
-        const project = await Project.findOne({ subdomain: projectIdentifier, status: 'ready' }); 
-        if (project) { 
-            const projectPath = path.join(DEPLOYMENTS_DIR, project.id); 
-            req.url = req.url.replace(`/${projectIdentifier}`, '') || '/'; 
-            return express.static(projectPath)(req, res, (err) => { 
-                res.sendFile(path.join(projectPath, 'index.html')); 
-            }); 
-        } 
-        return next(); 
-    } catch (error) { 
-        console.error("Path-based Proxy Error:", error); 
-        return res.status(500).send('Server error.'); 
+// 2. Serve static frontend files (index.html, dashboard.html, style.css) from root
+app.use(express.static(__dirname));
+
+// 3. Catch-all route to serve your landing page (index.html)
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ message: "API endpoint not found." });
     }
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.use(express.static(path.join(__dirname, '/')));
-
-app.get('*', (req, res) => { 
-    res.sendFile(path.join(__dirname, 'index.html')); 
-});
-
-// --- SERVER START ---
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+// --- SERVER INITIALIZATION ---
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => console.log("🚀 WebHost Core Engine operational on port " + PORT));
