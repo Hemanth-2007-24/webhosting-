@@ -3,12 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - O4D</title>
+    <title>Dashboard - WebHost</title>
     <meta name="robots" content="noindex, nofollow">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-        <link rel="icon" type="image/x-icon" href="https://open4discuss.nhforums.net/uploads/avatars/10.png?v=1735489416">
     <script>
         tailwind.config = {
             theme: {
@@ -72,7 +71,7 @@
     <header class="sticky top-0 z-50 w-full bg-bg-dark/75 backdrop-blur-xl border-b border-white/[0.06] h-16 flex items-center justify-between px-6 box-border">
         <div class="flex items-center gap-8">
             <a href="/" class="logo flex items-center gap-2 tracking-tight font-display font-extrabold text-xl">
-                O4D
+                WebHost
             </a>
             <div class="hidden md:flex gap-1">
                 <button id="nav-dash" class="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/[0.02]">Dashboard</button>
@@ -89,7 +88,7 @@
         <!-- Welcome Jumbotron Hero -->
         <div class="bg-gradient-to-r from-slate-900/60 to-slate-800/20 border border-white/[0.05] p-8 sm:p-10 rounded-[28px] shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div class="space-y-2">
-                <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">Projects Dashboard</h2>
+                <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">My Projects Dashboard</h2>
                 <p class="text-slate-400 text-sm max-w-lg">Provision sandboxed containers on Edge caching clusters. Deploy safely from private Git streams.</p>
             </div>
             <div class="flex gap-3">
@@ -98,8 +97,8 @@
             </div>
         </div>
 
-        <!-- Standalone Instant Web-to-App Direct Compiler Panel -->
-        <div class="glass-card p-6 sm:p-8 rounded-[28px] max-w-3xl mx-auto space-y-6">
+        <!-- Standalone Instant Web-to-App Direct Compiler Panel (HIDDEN) -->
+        <div id="direct-compiler-panel" class="glass-card p-6 sm:p-8 rounded-[28px] max-w-3xl mx-auto space-y-6 hidden">
             <div class="flex items-center gap-3">
                 <div class="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
                     <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
@@ -113,15 +112,15 @@
             <form id="direct-compile-form" class="grid sm:grid-cols-2 gap-4">
                 <div class="sm:col-span-2">
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Website URL</label>
-                    <input type="url" id="direct-url" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="https://example.com" required>
+                    <input type="url" id="direct-url" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="https://example.com">
                 </div>
                 <div>
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Application Name</label>
-                    <input type="text" id="direct-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="My Native App" required>
+                    <input type="text" id="direct-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="My Native App">
                 </div>
                 <div>
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Target Platform</label>
-                    <select id="direct-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" required>
+                    <select id="direct-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500">
                         <option value="android">Android Mobile (.APK)</option>
                         <option value="windows">Windows Desktop (.VBS)</option>
                     </select>
@@ -154,28 +153,7 @@
             </div>
 
             <!-- Native App Client Installer Card (5 columns wide on desktop) -->
-            <div class="lg:col-span-5">
-                <div class="glass-card p-6 rounded-[24px] space-y-4 h-full flex flex-col justify-between">
-                    <div class="flex items-center gap-3">
-                        <div class="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400">
-                            <i class="fa-solid fa-mobile-screen-button"></i>
-                        </div>
-                        <div>
-                            <h3 class="font-display font-bold text-base text-white">Native App Clients</h3>
-                            <p class="text-xs text-slate-500">Deploy and track progress natively from your system tray or mobile screen.</p>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-3 pt-2">
-                        <a href="/downloads/webhost.apk" class="flex items-center justify-center gap-2 p-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/35 text-emerald-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
-                            <i class="fa-brands fa-android text-base"></i> Android APK
-                        </a>
-                        <a href="/downloads/webhost-setup.exe" class="flex items-center justify-center gap-2 p-3.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 border-cyan-500/35 text-cyan-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
-                            <i class="fa-brands fa-windows text-base"></i> Windows EXE
-                        </a>
-                    </div>
-                </div>
-            </div>
+         
         </div>
     </main>
 
