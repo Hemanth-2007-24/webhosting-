@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - WebHost</title>
+    <title>Dashboard - O4D</title>
     <meta name="robots" content="noindex, nofollow">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="icon" type="image/x-icon" href="https://open4discuss.nhforums.net/uploads/avatars/10.png?v=1735489416">
     <script>
         tailwind.config = {
             theme: {
@@ -297,30 +298,35 @@ document.addEventListener('DOMContentLoaded', () => {
     let hasSavedPat = false;
 
     // Fixed fetch utility to safely capture non-JSON HTML error pages (e.g. 502/404) and prevent browser parser crashes
- const apiFetch = async (endpoint, options = {}) => { 
+    const apiFetch = async (endpoint, options = {}) => { 
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            ...options.headers
+        };
+        let body = options.body;
+        if (body && typeof body === 'object' && !(body instanceof FormData)) {
+            headers['Content-Type'] = 'application/json';
+            body = JSON.stringify(body);
+        }
         const res = await fetch(`${API_BASE_URL}/api${endpoint}`, { 
             ...options, 
-            headers: { 'Authorization': `Bearer ${token}`, ...options.headers }, 
+            headers,
+            body
         }); 
-        
         if (res.status === 401) { 
             localStorage.removeItem('token'); 
             window.location.replace('/index.html'); 
             throw new Error('Session expired'); 
         } 
-        if (res.status === 204) {
-            return; 
-        }
+        if (res.status === 204) return; 
 
-        // --- RESILIENT JSON CHECK ---
-        // Safely capture HTML error pages (e.g. 502/404) and prevent browser parser crashes
+        // Intercept Content-Type header to handle raw HTML error pages cleanly
         const contentType = res.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") !== -1) {
             const data = await res.json(); 
             if (!res.ok) throw new Error(data.message); 
             return data; 
         } else {
-            // Read the response as raw text to inspect the error
             const rawText = await res.text();
             console.error("Non-JSON Response received from server:", rawText);
             throw new Error(`Server returned non-JSON error. Status Code: ${res.status}`);
@@ -639,15 +645,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Provide source files to deploy.'); 
             } 
             
-            const res = await fetch(`${API_BASE_URL}/api/deploy`, { 
+            // Re-routed to use secure apiFetch wrapper instead of raw unauthenticated fetch
+            const res = await apiFetch('/deploy', { 
                 method: 'POST', 
-                headers: { 'Authorization': `Bearer ${token}` }, 
                 body: formData, 
             }); 
-            if(!res.ok) { 
-                const errData = await res.json(); 
-                throw new Error(errData.message); 
-            } 
             showToast('Pipeline build step active!', 'success'); 
             hideModals(); 
             e.target.reset(); 
@@ -688,16 +690,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.append('icon', iconFile);
             }
 
-            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/build-app`, {
+            // Re-routed to use secure apiFetch wrapper instead of raw unauthenticated fetch
+            const res = await apiFetch(`/projects/${projectId}/build-app`, {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
                 body: formData
             });
-
-            if (!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.message || 'App Compilation failed.');
-            }
 
             showToast('Compilation started successfully!', 'success');
             hideModals();
@@ -739,18 +736,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const res = await fetch(`${API_BASE_URL}/api/build-app-direct`, {
+            // Re-routed to use secure apiFetch wrapper instead of raw unauthenticated fetch
+            const data = await apiFetch('/build-app-direct', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
                 body: formData
             });
-
-            if (!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.message || 'App Compilation failed.');
-            }
-
-            const data = await res.json();
             
             // Build timeout tracking overlay loop (passing custom appName as query parameter)
             setTimeout(() => {
