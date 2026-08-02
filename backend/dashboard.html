@@ -297,35 +297,30 @@ document.addEventListener('DOMContentLoaded', () => {
     let hasSavedPat = false;
 
     // Fixed fetch utility to safely capture non-JSON HTML error pages (e.g. 502/404) and prevent browser parser crashes
-    const apiFetch = async (endpoint, options = {}) => { 
-        const headers = {
-            'Authorization': `Bearer ${token}`,
-            ...options.headers
-        };
-        let body = options.body;
-        if (body && typeof body === 'object' && !(body instanceof FormData)) {
-            headers['Content-Type'] = 'application/json';
-            body = JSON.stringify(body);
-        }
+ const apiFetch = async (endpoint, options = {}) => { 
         const res = await fetch(`${API_BASE_URL}/api${endpoint}`, { 
             ...options, 
-            headers,
-            body
+            headers: { 'Authorization': `Bearer ${token}`, ...options.headers }, 
         }); 
+        
         if (res.status === 401) { 
             localStorage.removeItem('token'); 
             window.location.replace('/index.html'); 
             throw new Error('Session expired'); 
         } 
-        if (res.status === 204) return; 
+        if (res.status === 204) {
+            return; 
+        }
 
-        // Intercept Content-Type header to handle raw HTML error pages cleanly
+        // --- RESILIENT JSON CHECK ---
+        // Safely capture HTML error pages (e.g. 502/404) and prevent browser parser crashes
         const contentType = res.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") !== -1) {
             const data = await res.json(); 
             if (!res.ok) throw new Error(data.message); 
             return data; 
         } else {
+            // Read the response as raw text to inspect the error
             const rawText = await res.text();
             console.error("Non-JSON Response received from server:", rawText);
             throw new Error(`Server returned non-JSON error. Status Code: ${res.status}`);
