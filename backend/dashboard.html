@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - O4D</title>
+    <title>Dashboard - WebHost</title>
     <meta name="robots" content="noindex, nofollow">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -55,36 +55,6 @@
             70% { box-shadow: 0 0 0 6px rgba(234, 179, 8, 0); }
             100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
         }
-
-        /* --- Upgraded file dropzone component --- */
-        .dropzone {
-            border: 1.5px dashed rgba(255,255,255,0.14);
-            border-radius: 14px;
-            background: rgba(255,255,255,0.015);
-            padding: 1.1rem;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        .dropzone:hover {
-            border-color: rgba(99,102,241,0.45);
-            background: rgba(99,102,241,0.05);
-        }
-        .dropzone.drag-over {
-            border-color: #6366f1;
-            background: rgba(99,102,241,0.1);
-            box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
-        }
-        .file-chip {
-            display: inline-flex; align-items: center; gap: 6px;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 999px;
-            padding: 4px 10px 4px 12px;
-            font-size: 11px; font-weight: 600; color: #cbd5e1;
-        }
-        .file-chip button { color: #f87171; opacity: 0.75; }
-        .file-chip button:hover { opacity: 1; }
     </style>
 </head>
 <body class="font-sans bg-bg-dark text-white min-h-screen relative overflow-x-hidden selection:bg-indigo-500 selection:text-white">
@@ -100,8 +70,8 @@
     <!-- Header navigation -->
     <header class="sticky top-0 z-50 w-full bg-bg-dark/75 backdrop-blur-xl border-b border-white/[0.06] h-16 flex items-center justify-between px-6 box-border">
         <div class="flex items-center gap-8">
-            <a href="/" class="font-display font-extrabold text-xl tracking-tight bg-gradient-to-r from-white to-indigo-400 bg-clip-text text-transparent flex items-center gap-2">
-                <i class="fa-solid fa-cloud-lightning text-indigo-400"></i> O4D
+            <a href="/" class="logo flex items-center gap-2 tracking-tight font-display font-extrabold text-xl">
+                WebHost
             </a>
             <div class="hidden md:flex gap-1">
                 <button id="nav-dash" class="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/[0.02]">Dashboard</button>
@@ -118,7 +88,7 @@
         <!-- Welcome Jumbotron Hero -->
         <div class="bg-gradient-to-r from-slate-900/60 to-slate-800/20 border border-white/[0.05] p-8 sm:p-10 rounded-[28px] shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div class="space-y-2">
-                <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">Projects Dashboard</h2>
+                <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">My Projects Dashboard</h2>
                 <p class="text-slate-400 text-sm max-w-lg">Provision sandboxed containers on Edge caching clusters. Deploy safely from private Git streams.</p>
             </div>
             <div class="flex gap-3">
@@ -155,25 +125,11 @@
                         <option value="windows">Windows Desktop (.VBS)</option>
                     </select>
                 </div>
-                <div class="sm:col-span-2">
-                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">App Icon (Optional PNG/JPG)</label>
-                    <input type="file" id="direct-icon" class="w-full p-2.5 bg-black/45 border border-white/[0.08] rounded-xl text-xs" accept="image/png, image/jpeg">
-                </div>
-
-                <!-- NEW: extra file upload dropzone for direct compiler -->
-                <div class="sm:col-span-2 space-y-1.5">
-                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block">Additional Files (optional)</label>
-                    <p class="text-[10px] text-slate-500 -mt-1 mb-1">Bundled into the app package as local assets — configs, fonts, offline data, etc.</p>
-                    <div id="direct-dropzone" class="dropzone" tabindex="0">
-                        <i class="fa-solid fa-cloud-arrow-up text-xl text-indigo-400/80 mb-1.5"></i>
-                        <p class="text-xs text-slate-300 font-semibold">Drop files here or click to browse</p>
-                        <p class="text-[10px] text-slate-500 mt-0.5">Up to 10 files</p>
-                        <input type="file" id="direct-files" class="hidden" multiple>
+                <div class="sm:col-span-2 flex flex-col sm:flex-row items-end justify-between gap-4 pt-2">
+                    <div class="flex-1 w-full">
+                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">App Icon (Optional PNG/JPG)</label>
+                        <input type="file" id="direct-icon" class="w-full p-2.5 bg-black/45 border border-white/[0.08] rounded-xl text-xs" accept="image/png, image/jpeg">
                     </div>
-                    <div id="direct-files-list" class="flex flex-wrap gap-1.5 pt-1"></div>
-                </div>
-
-                <div class="sm:col-span-2 flex justify-end pt-2">
                     <button type="submit" id="direct-compile-btn" class="w-full sm:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all shadow-lg uppercase text-xs tracking-wider shrink-0 h-11">Compile Application</button>
                 </div>
             </form>
@@ -213,7 +169,7 @@
                         <a href="/downloads/webhost.apk" class="flex items-center justify-center gap-2 p-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/35 text-emerald-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
                             <i class="fa-brands fa-android text-base"></i> Android APK
                         </a>
-                        <a href="/downloads/webhost-setup.exe" class="flex items-center justify-center gap-2 p-3.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/35 text-cyan-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
+                        <a href="/downloads/webhost-setup.exe" class="flex items-center justify-center gap-2 p-3.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 border-cyan-500/35 text-cyan-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
                             <i class="fa-brands fa-windows text-base"></i> Windows EXE
                         </a>
                     </div>
@@ -251,11 +207,10 @@
             <form id="deploy-form" class="space-y-4">
                 <input type="hidden" id="deploy-project-id">
                 
-                <div class="flex bg-white/[0.02] p-1.5 rounded-xl border border-white/[0.05] mb-1">
+                <div class="flex bg-white/[0.02] p-1.5 rounded-xl border border-white/[0.05] mb-4">
                     <button type="button" class="deploy-tab active flex-1 py-2 text-xs font-bold uppercase rounded-lg bg-indigo-500 text-white" data-tab="github">Git Pipeline</button>
                     <button type="button" class="deploy-tab flex-1 py-2 text-xs font-bold uppercase rounded-lg text-slate-400 hover:text-white" data-tab="upload">Direct ZIP</button>
                 </div>
-                <p class="text-[10px] text-slate-500 mb-3">A GitHub token is only needed for cloning private repos — Direct ZIP works without one.</p>
 
                 <div id="github-deploy-view" class="deploy-view space-y-4">
                     <div id="repo-select-container" class="hidden space-y-2">
@@ -292,7 +247,7 @@
             </form>
         </div>
 
-        <!-- APP STUDIO MODAL WITH IMAGE ICON FILE UPLOADER -->
+        <!-- APP STUDIO MODAL WITH IMAGE ICON FILE UPLOADER & CUSTOM CODE EDITOR -->
         <div id="app-studio-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
             <h2 class="font-display font-extrabold text-2xl mb-2">Native App Studio</h2>
@@ -314,19 +269,11 @@
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Application Icon (PNG/JPG)</label>
                   <input type="file" id="app-icon-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-sm" accept="image/png, image/jpeg">
                 </div>
-
-                <!-- NEW: extra file upload dropzone for App Studio -->
-                <div class="space-y-1.5">
-                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block">Additional Files (optional)</label>
-                    <div id="app-dropzone" class="dropzone" tabindex="0">
-                        <i class="fa-solid fa-cloud-arrow-up text-xl text-indigo-400/80 mb-1.5"></i>
-                        <p class="text-xs text-slate-300 font-semibold">Drop files here or click to browse</p>
-                        <p class="text-[10px] text-slate-500 mt-0.5">Up to 10 files, bundled into the package</p>
-                        <input type="file" id="app-files" class="hidden" multiple>
-                    </div>
-                    <div id="app-files-list" class="flex flex-wrap gap-1.5 pt-1"></div>
+                <div>
+                  <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Custom Code Injection (Optional)</label>
+                  <textarea id="app-custom-code-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white font-mono text-xs focus:outline-none focus:border-indigo-500 h-24" placeholder="// Inject Kotlin logic, extra Javascript, CSS styles or Electron main/preload snippets..."></textarea>
+                  <p class="text-[10px] text-slate-500 mt-1">Allows custom security and WebView settings.</p>
                 </div>
-
                 <div class="flex justify-end gap-2 pt-4">
                     <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
                     <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs shadow-lg">Compile Application</button>
@@ -349,75 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     let hasSavedPat = false;
 
-    // --- Reusable dropzone: click-to-browse + drag & drop + chip list w/ remove ---
-    // Keeps a live FileList-like array per zone so multiple selections (click, then
-    // drag more in) accumulate instead of overwriting each other.
-    function initDropzone(zoneId, inputId, listId) {
-        const zone = document.getElementById(zoneId);
-        const input = document.getElementById(inputId);
-        const list = document.getElementById(listId);
-        let files = [];
-
-        const render = () => {
-            list.innerHTML = files.map((f, i) => `
-                <span class="file-chip">
-                    <i class="fa-solid fa-file text-[10px] text-indigo-400"></i>
-                    ${f.name.length > 22 ? f.name.slice(0, 19) + '…' : f.name}
-                    <button type="button" data-idx="${i}" class="remove-file-chip"><i class="fa-solid fa-xmark"></i></button>
-                </span>
-            `).join('');
-            list.querySelectorAll('.remove-file-chip').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    files.splice(Number(btn.dataset.idx), 1);
-                    render();
-                });
-            });
-        };
-
-        const addFiles = (fileList) => {
-            const incoming = Array.from(fileList || []);
-            files = [...files, ...incoming].slice(0, 10);
-            render();
-        };
-
-        zone.addEventListener('click', () => input.click());
-        zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') input.click(); });
-        input.addEventListener('change', () => addFiles(input.files));
-
-        ['dragenter', 'dragover'].forEach(evt => zone.addEventListener(evt, (e) => {
-            e.preventDefault(); e.stopPropagation();
-            zone.classList.add('drag-over');
-        }));
-        ['dragleave', 'drop'].forEach(evt => zone.addEventListener(evt, (e) => {
-            e.preventDefault(); e.stopPropagation();
-            zone.classList.remove('drag-over');
-        }));
-        zone.addEventListener('drop', (e) => addFiles(e.dataTransfer.files));
-
-        return {
-            getFiles: () => files,
-            reset: () => { files = []; input.value = ''; render(); }
-        };
-    }
-
-    const directDropzone = initDropzone('direct-dropzone', 'direct-files', 'direct-files-list');
-    const appDropzone = initDropzone('app-dropzone', 'app-files', 'app-files-list');
-
-    // Shared 401 handler: an expired/invalid/tampered token is treated the
-    // same as a missing one — clear it and bounce to the login screen so the
-    // user isn't stuck retrying requests that can never succeed with a
-    // stale token. SESSION_EXPIRED is thrown alongside the redirect purely so
-    // the calling code's try/catch exits immediately; catch blocks check for
-    // this specific error and skip showToast() so no error flashes on screen
-    // during the brief moment before navigation actually completes.
-    const SESSION_EXPIRED = 'SESSION_EXPIRED';
-    const handleUnauthorized = () => {
-        localStorage.removeItem('token');
-        window.location.replace('/index.html');
-    };
-
-    // Fixed fetch utility to serialize plain JavaScript objects as JSON
+    // Fixed fetch utility to safely capture non-JSON HTML error pages (e.g. 502/404) and prevent browser parser crashes
     const apiFetch = async (endpoint, options = {}) => { 
         const headers = {
             'Authorization': `Bearer ${token}`,
@@ -434,13 +313,23 @@ document.addEventListener('DOMContentLoaded', () => {
             body
         }); 
         if (res.status === 401) { 
-            handleUnauthorized();
-            throw new Error(SESSION_EXPIRED); 
+            localStorage.removeItem('token'); 
+            window.location.replace('/index.html'); 
+            throw new Error('Session expired'); 
         } 
         if (res.status === 204) return; 
-        const data = await res.json(); 
-        if (!res.ok) throw new Error(data.message); 
-        return data; 
+
+        // Intercept Content-Type header to handle raw HTML error pages cleanly
+        const contentType = res.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            const data = await res.json(); 
+            if (!res.ok) throw new Error(data.message); 
+            return data; 
+        } else {
+            const rawText = await res.text();
+            console.error("Non-JSON Response received from server:", rawText);
+            throw new Error(`Server returned non-JSON error. Status Code: ${res.status}`);
+        }
     };
 
     const fetchAndRenderProjects = async (isSilent = false) => { 
@@ -448,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Injected dynamic loading indicator safely inside the target element before rendering only if NOT in silent background update mode
             if (!isSilent) {
                 projectsList.innerHTML = `
-                    <div id="dynamic-loader" class="text-center py-12 col-span-full">
+                    <div id="dynamic-loader" class="text-center py-12 col-span-full animate-fadeIn">
                         <i class="fa-solid fa-spinner animate-spin text-3xl text-indigo-400 mb-2"></i>
                         <p class="text-slate-400 text-sm">Loading provisioned containers...</p>
                     </div>
@@ -485,30 +374,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else if (project.appAndroidStatus === 'building' || project.appWindowsStatus === 'building') {
                         badgeHTML = `<span class="status-badge queued"><i class="fa-solid fa-spinner animate-spin mr-1"></i> BUNDLING</span>`;
                     } else {
-                        badgeHTML = `<span class="status-badge ${project.status}">${project.status}</span>`;
+                        badgeHTML = `<span class="status-badge ${project.status || 'ready'}">${project.status || 'ready'}</span>`;
                     }
+
+                    // Secure fallbacks to reconstruct title/subdomain if fields are empty on old/legacy DB records
+                    const projectTitle = project.projectName || project.name || (project.subdomain ? project.subdomain.split('-').slice(1).join('-') : 'test');
+                    const cleanSubdomain = project.subdomain || `${(projectTitle || 'app').toLowerCase().replace(/[^a-z0-9-]/g, '')}`;
 
                     card.innerHTML = `
                         <div class="space-y-3">
                             <div class="flex justify-between items-start">
-                                <h3 class="font-display font-extrabold text-lg truncate max-w-[150px]">${project.name}</h3>
+                                <h3 class="font-display font-extrabold text-lg truncate max-w-[150px]">${projectTitle}</h3>
                                 ${badgeHTML}
                             </div>
-                            <a href="/${project.subdomain}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold tracking-wide flex items-center gap-1">/${project.subdomain} <i class="fa-solid fa-external-link text-[10px]"></i></a>
+                            <a href="/${cleanSubdomain}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold tracking-wide flex items-center gap-1">/${cleanSubdomain} <i class="fa-solid fa-external-link text-[10px]"></i></a>
                             ${project.rootDir ? `<div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Path: <span class="text-slate-300 font-mono">${project.rootDir}</span></div>` : ''}
                             ${appDownloadsHTML}
                         </div>
                         <div class="flex flex-wrap gap-2 pt-2 border-t border-white/[0.05]">
-                            <button class="flex-1 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-xl text-xs font-semibold transition-all deploy-btn" data-id="${project._id}" data-name="${project.name}" data-root-dir="${project.rootDir || ''}">Deploy</button>
-                            <button class="flex-1 py-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-xl text-xs font-semibold transition-all app-studio-btn" data-id="${project._id}" data-name="${project.name}">App Studio</button>
-                            <button class="px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl text-xs transition-all delete-btn" data-id="${project._id}" data-name="${project.name}"><i class="fa-solid fa-trash"></i></button>
+                            <button class="flex-1 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-xl text-xs font-semibold transition-all deploy-btn" data-id="${project._id}" data-name="${projectTitle}" data-root-dir="${project.rootDir || ''}">Deploy</button>
+                            <button class="flex-1 py-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-xl text-xs font-semibold transition-all app-studio-btn" data-id="${project._id}" data-name="${projectTitle}">App Studio</button>
+                            <button class="px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl text-xs transition-all delete-btn" data-id="${project._id}" data-name="${projectTitle}"><i class="fa-solid fa-trash"></i></button>
                         </div>
                     `; 
                     projectsList.appendChild(card); 
                 }); 
             } 
         } catch (error) { 
-            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error'); 
             projectsList.innerHTML = `<p class="text-center py-12 col-span-full text-red-400 font-medium">Failed to retrieve containers.</p>`;
         } 
@@ -561,7 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div>
                         <h3 class="font-display font-bold text-lg text-white">Secure Git Repository Credentials</h3>
-                        <p class="text-xs text-slate-500">Optional — only needed to clone private repos via Git Pipeline. Not required to launch a container or deploy via Direct ZIP.</p>
+                        <p class="text-xs text-slate-500">Provide an authentication token to sync and clone private project workspaces.</p>
                     </div>
                 </div>
                 <div class="flex flex-col sm:flex-row gap-3">
@@ -587,7 +479,6 @@ document.addEventListener('DOMContentLoaded', () => {
             await loadSavedPat();
             if (hasSavedPat) loadUserRepos();
         } catch (error) {
-            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error');
         } finally {
             btn.disabled = false;
@@ -646,19 +537,15 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.disabled = true; 
         btn.innerHTML = 'Provisioning...'; 
         try { 
-            // NOTE: creating a container never requires a GitHub PAT — only
-            // a project name. GitHub credentials are entirely optional and
-            // only relevant later, inside the Deploy modal's Git Pipeline tab.
             await apiFetch('/projects', { 
                 method: 'POST', 
-                body: { name: document.getElementById('project-name').value }, 
+                body: { projectName: document.getElementById('project-name').value }, 
             }); 
             showToast('Instance launched successfully!', 'success'); 
             hideModals(); 
             e.target.reset(); 
-            fetchAndRenderProjects(); 
+            fetchAndRenderProjects(false); 
         } catch (error) { 
-            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error'); 
         } finally { 
             btn.disabled = false; 
@@ -678,23 +565,25 @@ document.addEventListener('DOMContentLoaded', () => {
             showModal(document.getElementById('deploy-modal')); 
             
             if (hasSavedPat) {
-                // GitHub is connected — Git Pipeline is a sensible default tab
-                document.querySelector('.deploy-tab[data-tab="github"]').click();
                 loadUserRepos();
             } else {
-                // No GitHub PAT saved. A PAT is NOT required to deploy — the
-                // user can just upload a ZIP — so default straight to the
-                // Direct ZIP tab instead of stranding them on Git Pipeline.
                 document.getElementById('repo-select-container').classList.add('hidden');
                 document.getElementById('manual-url-container').classList.remove('hidden');
-                document.querySelector('.deploy-tab[data-tab="upload"]').click();
             }
         } 
 
         if (appStudioBtn) {
             document.getElementById('app-project-id').value = appStudioBtn.dataset.id;
             document.getElementById('app-name-input').value = appStudioBtn.dataset.name + " App";
-            appDropzone.reset();
+            
+            // Fetch and populate project's existing customCode if present
+            try {
+                const data = await apiFetch(`/project/${appStudioBtn.dataset.id}/custom-code`);
+                document.getElementById('app-custom-code-input').value = data.customCode || '';
+            } catch (err) {
+                console.error("Failed to pre-populate custom code:", err);
+            }
+            
             showModal(document.getElementById('app-studio-modal'));
         }
 
@@ -705,7 +594,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     showToast('Instance deleted successfully.', 'success'); 
                     document.getElementById(`project-card-${deleteBtn.dataset.id}`).remove(); 
                 } catch (error) { 
-                    if (error.message === SESSION_EXPIRED) return;
                     showToast(error.message, 'error'); 
                 } 
             } 
@@ -761,10 +649,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Authorization': `Bearer ${token}` }, 
                 body: formData, 
             }); 
-            if (res.status === 401) {
-                handleUnauthorized();
-                throw new Error(SESSION_EXPIRED);
-            }
             if(!res.ok) { 
                 const errData = await res.json(); 
                 throw new Error(errData.message); 
@@ -774,7 +658,6 @@ document.addEventListener('DOMContentLoaded', () => {
             e.target.reset(); 
             setTimeout(fetchAndRenderProjects, 3000); 
         } catch (error) { 
-            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error'); 
         } finally { 
             btn.disabled = false; 
@@ -782,7 +665,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } 
     });
 
-    // Native App Builder Compilation Submission Handler
+    // Native App Builder Compilation Submission Handler (Saves customCode before compilation)
     document.getElementById('app-studio-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = e.target.querySelector('button[type="submit"]');
@@ -790,40 +673,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const platform = document.getElementById('app-platform').value;
         const appName = document.getElementById('app-name-input').value;
         const iconFile = document.getElementById('app-icon-input').files[0];
+        const customCode = document.getElementById('app-custom-code-input').value;
 
         btn.disabled = true;
         btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Compiling...';
 
-        const formData = new FormData();
-        formData.append('platform', platform);
-        formData.append('appName', appName);
-        if (iconFile) {
-            formData.append('icon', iconFile);
-        }
-        appDropzone.getFiles().forEach(f => formData.append('files', f));
-
         try {
+            // First: Save the custom code to the MongoDB project document securely
+            await apiFetch(`/project/${projectId}/custom-code`, {
+                method: 'POST',
+                body: { customCode }
+            });
+
+            // Second: Trigger the compilation process with App Name and Icons
+            const formData = new FormData();
+            formData.append('platform', platform);
+            formData.append('appName', appName);
+            if (iconFile) {
+                formData.append('icon', iconFile);
+            }
+
             const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/build-app`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
                 body: formData
             });
 
-            if (res.status === 401) {
-                handleUnauthorized();
-                throw new Error(SESSION_EXPIRED);
-            }
             if (!res.ok) {
                 const errData = await res.json();
                 throw new Error(errData.message || 'App Compilation failed.');
             }
 
-            showToast('Native app compiler compilation initialized.', 'success');
+            showToast('Compilation started successfully!', 'success');
             hideModals();
-            appDropzone.reset();
-            fetchAndRenderProjects();
+            fetchAndRenderProjects(false);
         } catch (error) {
-            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error');
         } finally {
             btn.disabled = false;
@@ -858,7 +742,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (iconFile) {
             formData.append('icon', iconFile);
         }
-        directDropzone.getFiles().forEach(f => formData.append('files', f));
 
         try {
             const res = await fetch(`${API_BASE_URL}/api/build-app-direct`, {
@@ -867,10 +750,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: formData
             });
 
-            if (res.status === 401) {
-                handleUnauthorized();
-                throw new Error(SESSION_EXPIRED);
-            }
             if (!res.ok) {
                 const errData = await res.json();
                 throw new Error(errData.message || 'App Compilation failed.');
@@ -891,12 +770,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 btn.disabled = false;
                 btn.innerHTML = 'Compile Application';
-                directDropzone.reset();
                 showToast('App compiled successfully!', 'success');
             }, 6000);
 
         } catch (error) {
-            if (error.message === SESSION_EXPIRED) return;
             showToast(error.message, 'error');
             statusDiv.classList.add('hidden');
             btn.disabled = false;
@@ -904,7 +781,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('logout-btn').addEventListener('click', handleUnauthorized);
+    document.getElementById('logout-btn').addEventListener('click', () => { 
+        localStorage.removeItem('token'); 
+        window.location.replace('/index.html'); 
+    });
     
     document.getElementById('sync-btn').addEventListener('click', () => fetchAndRenderProjects(false));
 
