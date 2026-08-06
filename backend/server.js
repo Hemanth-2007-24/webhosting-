@@ -18,7 +18,6 @@ const unzipper = require('unzipper');
 const simpleGit = require('simple-git');
 
 // --- CRITICAL UNCAUGHT EXCEPTION SAFETY HANDLERS ---
-// Prevents any runtime compilation, connection, or database errors from crashing the Node container process on Back4app.
 process.on('uncaughtException', (err) => {
     console.error('🔥 CRITICAL UNCAUGHT EXCEPTION ENCOUNTERED:');
     console.error(err.message);
@@ -37,13 +36,12 @@ const PORT = process.env.PORT || 8080;
 
 if (!process.env.MONGO_URI) {
     console.warn("⚠️ WARNING: MONGO_URI environment variable is missing!");
-    console.warn("Please add MONGO_URI to your Back4App Container environment variables.");
+    console.warn("Please add MONGO_URI to your Back4App/Railway environment variables.");
     
     app.get('*', (req, res) => {
         res.status(500).send(`
             <h1>WebHost is in Safe Mode</h1>
             <p><strong>Config Error:</strong> MONGO_URI is missing from your environment variables.</p>
-            <p>Please configure MONGO_URI inside your Back4App dashboard variables settings.</p>
         `);
     });
     
@@ -91,6 +89,15 @@ const authenticateToken = (req, res, next) => {
         req.user = user;
         next();
     });
+};
+
+// --- ADMIN AUTHORIZATION MIDDLEWARE ---
+const requireAdmin = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ message: "Forbidden: Administrative privileges required." });
+    }
 };
 
 // --- SMART INDEX FINDER SYSTEM ---
@@ -216,9 +223,12 @@ app.post('/api/auth/register', async (req, res) => {
         const existing = await User.findOne({ email });
         if (existing) return res.status(400).json({ message: "User account already exists." });
 
-        const user = new User({ email, password });
+        // Auto-promote user to administrator if matching the env configuration
+        const role = email.toLowerCase() === (process.env.ADMIN_EMAIL || '').toLowerCase() ? 'admin' : 'user';
+
+        const user = new User({ email, password, role });
         await user.save();
-        await LoggerService.log('USER_REGISTERED', `Registered Account: ${email}`, user._id);
+        await LoggerService.log('USER_REGISTERED', `Registered Account: ${email} | Role: ${role}`, user._id);
         res.status(201).json({ message: "User account created successfully." });
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -637,6 +647,64 @@ app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, re
         if (project) {
             await project.updateOne({ status: 'failed' });
         }
+    }
+});
+
+// =================================================================
+// ==                 ADMIN MANAGEMENT ENDPOINTS                  ==
+// =================================================================
+
+// 1. Fetch platform statistics (Admin Only)
+app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const totalUsers = await User.countDocuments();
+        const totalProjects = await Project.countDocuments();
+        const readyProjects = await Project.countDocuments({ status: 'ready' });
+        
+        res.json({
+            totalUsers,
+            totalProjects,
+            activeDeployments: readyProjects
+        });
+    } catch (err) {
+        console.error("Admin stats fetch error:", err);
+        res.status(500).json({ message: "Server error compiling platform statistics." });
+    }
+});
+
+// 2. Fetch all system projects with owner emails (Admin Only)
+app.get('/api/admin/projects', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const projects = await Project.find()
+            .populate('createdBy', 'email')
+            .sort({ createdAt: -1 });
+        res.json(projects);
+    } catch (err) {
+        console.error("Admin projects fetch error:", err);
+        res.status(500).json({ message: "Server error retrieving system projects." });
+    }
+});
+
+// 3. Administrative delete of any project container and files (Admin Only)
+app.delete('/api/admin/projects/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const project = await Project.findById(req.params.id);
+        if (!project) return res.status(404).json({ message: "Project not found." });
+
+        const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
+        const projectPath = path.join(DEPLOYMENTS_DIR, project._id.toString());
+        
+        // Remove deployed files from local disk
+        await fs.remove(projectPath);
+        
+        // Remove DB document
+        await Project.findByIdAndDelete(req.params.id);
+        
+        await LoggerService.log('ADMIN_PROJECT_DELETED', `Admin deleted project instance: ${project.projectName}`, req.user.id);
+        res.json({ message: "Project administratively deleted successfully." });
+    } catch (err) {
+        console.error("Admin project delete error:", err);
+        res.status(500).json({ message: "Server error deleting project." });
     }
 });
 

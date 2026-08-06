@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - WebHost</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#6366f1',
+                        'primary-hover': '#4f46e5',
+                        'bg-dark': '#050816',
+                        'bg-light': '#0F172A',
+                        accent: '#6366F1'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Space Grotesk', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .glass-card {
+            background-color: rgba(17, 24, 39, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .status-badge { padding: 0.25rem 0.65rem; border-radius: 99px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: inline-block; }
+        .status-badge.ready { background-color: rgba(16, 185, 129, 0.12); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.25); }
+        .status-badge.deploying, .status-badge.queued { background-color: rgba(234, 179, 8, 0.12); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.25); }
+        .status-badge.failed { background-color: rgba(239, 68, 68, 0.12); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.25); }
+    </style>
+</head>
+<body class="font-sans bg-bg-dark text-white min-h-screen relative overflow-x-hidden selection:bg-indigo-500 selection:text-white">
+
+    <!-- Ambient Glow BG -->
+    <div class="absolute inset-0 pointer-events-none z-0">
+        <div class="absolute top-[5%] left-[10%] w-96 h-96 rounded-full bg-indigo-600/10 blur-[120px]"></div>
+        <div class="absolute bottom-[20%] right-[10%] w-[500px] h-[500px] rounded-full bg-violet-600/10 blur-[150px]"></div>
+        <div class="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_40%,#000_70%,transparent_100%)]"></div>
+    </div>
+
+    <!-- Header navigation -->
+    <header class="sticky top-0 z-50 w-full bg-bg-dark/75 backdrop-blur-xl border-b border-white/[0.06] h-16 flex items-center justify-between px-6 box-border">
+        <div class="flex items-center gap-8">
+            <a href="/" class="logo flex items-center gap-2 tracking-tight font-display font-extrabold text-xl">
+                WebHost Admin
+            </a>
+            <div class="hidden md:flex gap-1">
+                <a href="dashboard.html" class="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/[0.02] text-slate-300 hover:text-white">User Dashboard</a>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button id="logout-btn" class="px-3.5 py-1.5 text-xs font-bold bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-all">Logout</button>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-12 relative z-10 space-y-10">
+        
+        <!-- Welcome Jumbotron Hero -->
+        <div class="bg-gradient-to-r from-red-950/20 via-slate-900/60 to-slate-800/20 border border-red-500/10 p-8 sm:p-10 rounded-[28px] shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div class="space-y-2">
+                <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">Administration Control Panel</h2>
+                <p class="text-slate-400 text-sm max-w-lg">Manage all system containers, monitor active users, and execute administrative website deletions.</p>
+            </div>
+            <button id="sync-stats-btn" class="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 text-sm"><i class="fa-solid fa-sync mr-1"></i> Refresh System Stats</button>
+        </div>
+
+        <!-- System Stats Cards Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div class="glass-card p-6 rounded-[24px] space-y-2">
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Total Registered Users</span>
+                <span id="stat-users" class="text-3xl font-extrabold text-white font-display">--</span>
+            </div>
+            <div class="glass-card p-6 rounded-[24px] space-y-2">
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Total Project Instances</span>
+                <span id="stat-projects" class="text-3xl font-extrabold text-white font-display">--</span>
+            </div>
+            <div class="glass-card p-6 rounded-[24px] space-y-2">
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">Active Edge Deployments</span>
+                <span id="stat-deployments" class="text-3xl font-extrabold text-white font-display">--</span>
+            </div>
+        </div>
+
+        <!-- Global Project Management Table -->
+        <div class="glass-card p-6 sm:p-8 rounded-[28px] space-y-6">
+            <h3 class="font-display font-extrabold text-xl">Global Container Instances</h3>
+            
+            <div class="overflow-x-auto w-full">
+                <table class="w-full text-left text-sm border-collapse">
+                    <thead>
+                        <tr class="border-b border-white/[0.08] text-slate-400 text-xs uppercase font-bold tracking-wider">
+                            <th class="py-3 px-4">Project Name</th>
+                            <th class="py-3 px-4">Creator / Owner</th>
+                            <th class="py-3 px-4">Subdomain Route</th>
+                            <th class="py-3 px-4">Build Status</th>
+                            <th class="py-3 px-4 text-right">Administrative Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="global-projects-list" class="divide-y divide-white/[0.04]">
+                        <!-- Populated dynamically via script -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <div id="toast-notification" class="fixed bottom-[-100px] left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl border font-bold text-sm shadow-2xl transition-all duration-300 z-50"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const API_BASE_URL = '';
+    const token = localStorage.getItem('token');
+    
+    const projectsList = document.getElementById('global-projects-list');
+    const toast = document.getElementById('toast-notification');
+
+    // Secure payload decoder helper
+    const parseJwt = (token) => {
+        try {
+            return JSON.parse(atob(token.split('.')[1]));
+        } catch (e) {
+            return null;
+        }
+    };
+
+    // Client-side role validation
+    const userPayload = parseJwt(token);
+    if (!userPayload || userPayload.role !== 'admin') {
+        window.location.replace('/dashboard.html');
+        return;
+    }
+
+    const apiFetch = async (endpoint, options = {}) => { 
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            ...options.headers
+        };
+        let body = options.body;
+        if (body && typeof body === 'object' && !(body instanceof FormData)) {
+            headers['Content-Type'] = 'application/json';
+            body = JSON.stringify(body);
+        }
+        const res = await fetch(`${API_BASE_URL}/api${endpoint}`, { 
+            ...options, 
+            headers,
+            body
+        }); 
+        if (res.status === 401) { 
+            localStorage.removeItem('token'); 
+            window.location.replace('/index.html'); 
+            throw new Error('Session expired'); 
+        } 
+        if (res.status === 204) return; 
+
+        const contentType = res.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            const data = await res.json(); 
+            if (!res.ok) throw new Error(data.message); 
+            return data; 
+        } else {
+            const rawText = await res.text();
+            console.error("Non-JSON Response received:", rawText);
+            throw new Error(`Server error. Status Code: ${res.status}`);
+        }
+    };
+
+    const fetchSystemStats = async () => {
+        try {
+            const stats = await apiFetch('/admin/stats');
+            document.getElementById('stat-users').textContent = stats.totalUsers;
+            document.getElementById('stat-projects').textContent = stats.totalProjects;
+            document.getElementById('stat-deployments').textContent = stats.activeDeployments;
+        } catch (err) {
+            showToast("Failed to load platform statistics.", "error");
+        }
+    };
+
+    const fetchAndRenderAllProjects = async () => { 
+        try { 
+            projectsList.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center py-12 text-slate-400">
+                        <i class="fa-solid fa-spinner animate-spin mr-2"></i> Loading global platform index...
+                    </td>
+                </tr>
+            `;
+            const projects = await apiFetch('/admin/projects'); 
+            projectsList.innerHTML = ''; 
+            
+            if (!projects || projects.length === 0) { 
+                projectsList.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-slate-500 font-medium">No project containers found on the platform.</td></tr>`; 
+            } else { 
+                projects.forEach(project => { 
+                    const row = document.createElement('tr'); 
+                    row.className = 'hover:bg-white/[0.02] transition-all';
+                    
+                    const ownerEmail = project.createdBy ? project.createdBy.email : 'Unknown Owner';
+                    const cleanSubdomain = project.subdomain || 'unconfigured';
+                    
+                    row.innerHTML = `
+                        <td class="py-4 px-4 font-semibold text-white">${project.projectName || project.name}</td>
+                        <td class="py-4 px-4 text-slate-400 font-mono text-xs">${ownerEmail}</td>
+                        <td class="py-4 px-4 text-indigo-400 font-bold font-mono text-xs">/${cleanSubdomain}</td>
+                        <td class="py-4 px-4"><span class="status-badge ${project.status || 'ready'}">${project.status || 'ready'}</span></td>
+                        <td class="py-4 px-4 text-right space-x-1.5">
+                            <a href="/${cleanSubdomain}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-white rounded-lg text-xs font-bold transition-all"><i class="fa-solid fa-external-link"></i> Visit</a>
+                            <button class="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-white rounded-lg text-xs font-bold transition-all delete-btn" data-id="${project._id}" data-name="${project.projectName || project.name}"><i class="fa-solid fa-trash"></i> Delete</button>
+                        </td>
+                    `; 
+                    projectsList.appendChild(row); 
+                }); 
+            } 
+        } catch (error) { 
+            showToast(error.message, 'error'); 
+            projectsList.innerHTML = `<tr><td colspan="5" class="text-center py-12 text-red-400 font-medium">Failed to retrieve global container list.</td></tr>`;
+        } 
+    };
+
+    projectsList.addEventListener('click', async (e) => {
+        const deleteBtn = e.target.closest('.delete-btn');
+        if (deleteBtn) {
+            if (confirm(`ADMIN ACTION REQUIRED:\n\nAre you sure you want to administratively delete "${deleteBtn.dataset.name}"? This removes all project files and database instances permanently.`)) {
+                try {
+                    await apiFetch(`/admin/projects/${deleteBtn.dataset.id}`, { method: 'DELETE' });
+                    showToast('Administrative deletion executed.', 'success');
+                    fetchSystemStats();
+                    fetchAndRenderAllProjects();
+                } catch (err) {
+                    showToast(err.message, 'error');
+                }
+            }
+        }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', () => { 
+        localStorage.removeItem('token'); 
+        localStorage.removeItem('refreshToken');
+        window.location.replace('/index.html'); 
+    });
+
+    document.getElementById('sync-stats-btn').addEventListener('click', () => {
+        fetchSystemStats();
+        fetchAndRenderAllProjects();
+    });
+
+    function showToast(message, type = 'success') {
+        if (!toast) return;
+        toast.textContent = message;
+        toast.className = `fixed bottom-[-100px] left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl border font-bold text-sm shadow-2xl transition-all duration-300 z-50 show`;
+        if (type === 'success') {
+            toast.classList.add('bg-emerald-500/10', 'border-emerald-500/25', 'text-emerald-400');
+            toast.classList.remove('bg-red-500/10', 'border-red-500/25', 'text-red-400');
+        } else {
+            toast.classList.add('bg-red-500/10', 'border-red-500/25', 'text-red-400');
+            toast.classList.remove('bg-emerald-500/10', 'border-emerald-500/25', 'text-emerald-400');
+        }
+        setTimeout(() => { toast.style.bottom = '30px'; }, 50);
+        setTimeout(() => { toast.style.bottom = '-100px'; }, 4000);
+    }
+
+    // Initialize Dashboard
+    fetchSystemStats();
+    fetchAndRenderAllProjects();
+});
+</script>
+</body>
+</html>
