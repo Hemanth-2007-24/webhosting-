@@ -209,6 +209,63 @@ async function ensureBaseApkTemplate() {
 
 ensureBaseApkTemplate().catch(err => console.error("⚠️ Background template check skipped:", err.message));
 
+// --- DEFENSIVE ZIP EXTRACTION PIPELINE (Anti-Zip Bomb & Path Traversal) ---
+async function extractZipSafely(zipPath, targetDir) {
+    const MAX_TOTAL_SIZE = 50 * 1024 * 1024; // 50MB Maximum Uncompressed Size [1.1.4]
+    const MAX_FILES_COUNT = 1000;            // 1,000 files maximum limit [1.1.4]
+    const FORBIDDEN_EXTENSIONS = ['.exe', '.dll', '.bat', '.vbs', '.sh', '.apk', '.jar', '.php', '.jsp', '.asp'];
+
+    const zip = await unzipper.Open.file(zipPath);
+    let totalSize = 0;
+    let fileCount = 0;
+
+    // Step 1: Pre-extraction validation (Scans metadata to prevent Zip Bombs)
+    for (const file of zip.files) {
+        fileCount++;
+        if (fileCount > MAX_FILES_COUNT) {
+            throw new Error(`Security Violation: Archive contains too many files (Max Limit: ${MAX_FILES_COUNT}).`);
+        }
+
+        totalSize += file.uncompressedSize;
+        if (totalSize > MAX_TOTAL_SIZE) {
+            throw new Error(`Security Violation: Decompressed archive size exceeds safety threshold limit of 50MB.`);
+        }
+
+        // Prevention: Decompression Ratio Validation (Busts 42.zip or dense payloads)
+        const compressionRatio = file.uncompressedSize / (file.compressedSize || 1);
+        if (file.uncompressedSize > 1024 * 1024 && compressionRatio > 100) {
+            throw new Error(`Security Violation: Unusually high compression ratio detected (${compressionRatio.toFixed(1)}x). Archive flagged as potential Zip Bomb.`);
+        }
+
+        // Prevention: Malicious executable files extension blocker
+        const ext = path.extname(file.path).toLowerCase();
+        if (FORBIDDEN_EXTENSIONS.includes(ext)) {
+            throw new Error(`Security Violation: Unauthorized file type '${ext}' found inside archive.`);
+        }
+    }
+
+    // Step 2: Extraction execution with strict path boundary checking
+    for (const file of zip.files) {
+        if (file.type === 'Directory') continue;
+
+        const resolvedPath = path.resolve(targetDir, file.path);
+        
+        // Prevention: Path Traversal boundary check
+        if (!resolvedPath.startsWith(targetDir)) {
+            throw new Error(`Security Violation: Attempted directory traversal outside target workspace.`);
+        }
+
+        // Write file safely
+        await fs.ensureDir(path.dirname(resolvedPath));
+        await new Promise((resolve, reject) => {
+            file.stream()
+                .pipe(fs.createWriteStream(resolvedPath))
+                .on('finish', resolve)
+                .on('error', reject);
+        });
+    }
+}
+
 // =================================================================
 // ==                     AUTH API ENDPOINTS                      ==
 // =================================================================
@@ -241,6 +298,13 @@ app.post('/api/auth/login', async (req, res) => {
         const user = await User.findOne({ email });
         if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(400).json({ message: "Invalid email or credentials." });
+        }
+
+        // Dynamic Admin Promotion: If an existing user matches ADMIN_EMAIL but is not yet marked as 'admin', promote them automatically on login.
+        if (email.toLowerCase() === (process.env.ADMIN_EMAIL || '').toLowerCase() && user.role !== 'admin') {
+            user.role = 'admin';
+            await user.save();
+            console.log(`[ADMIN_PROMOTION] Successfully promoted existing user ${email} to admin role.`);
         }
 
         const accessToken = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET || 'fallback_secret_key', { expiresIn: '1h' });
@@ -615,8 +679,10 @@ app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, re
             await fs.emptyDir(tempExtractDir);
 
             console.log(`[${project.projectName}] ... Extracting zip archive.`);
-            const zipArchive = await unzipper.Open.file(req.file.path);
-            await zipArchive.extract({ path: tempExtractDir });
+            
+            // Invoking defensive, path-traversal & zip-bomb protected extraction system instead of raw extraction [1.1.4]
+            await extractZipSafely(req.file.path, tempExtractDir);
+            
             console.log(`[${project.projectName}] ... Unzip successful.`);
             await fs.remove(req.file.path);
 
