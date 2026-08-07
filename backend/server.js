@@ -211,8 +211,8 @@ ensureBaseApkTemplate().catch(err => console.error("⚠️ Background template c
 
 // --- DEFENSIVE ZIP EXTRACTION PIPELINE (Anti-Zip Bomb & Path Traversal) ---
 async function extractZipSafely(zipPath, targetDir) {
-    const MAX_TOTAL_SIZE = 50 * 1024 * 1024; // 50MB Maximum Uncompressed Size [1.1.4]
-    const MAX_FILES_COUNT = 1000;            // 1,000 files maximum limit [1.1.4]
+    const MAX_TOTAL_SIZE = 50 * 1024 * 1024; // 50MB Maximum Uncompressed Size
+    const MAX_FILES_COUNT = 1000;            // 1,000 files maximum limit
     const FORBIDDEN_EXTENSIONS = ['.exe', '.dll', '.bat', '.vbs', '.sh', '.apk', '.jar', '.php', '.jsp', '.asp'];
 
     const zip = await unzipper.Open.file(zipPath);
@@ -578,6 +578,84 @@ app.get('/api/user/repos', authenticateToken, async (req, res) => {
 // ==                    BUILD ENGINE API                         ==
 // =================================================================
 
+// --- NATIVE APP COMPILER ROUTE (AUTHENTICATED WITH CORRECT authenticateToken) ---
+app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon'), async (req, res) => {
+    const { platform, appName } = req.body;
+    const projectId = req.params.id;
+
+    if (!platform || !['android', 'windows'].includes(platform)) {
+        return res.status(400).json({ message: 'Invalid platform configuration.' });
+    }
+
+    const cleanAppName = (appName || 'Web Launcher').trim();
+    if (cleanAppName.length < 2) {
+        return res.status(400).json({ message: 'Application name is too short.' });
+    }
+
+    try {
+        const project = await Project.findById(projectId);
+        if (!project || project.owner.toString() !== req.user.id) {
+            return res.status(404).json({ message: 'Instance not found or unauthorized.' });
+        }
+
+        const updateField = platform === 'android' ? { appAndroidStatus: 'building', appName: cleanAppName } : { appWindowsStatus: 'building', appName: cleanAppName };
+        await Project.findByIdAndUpdate(projectId, updateField);
+
+        console.log(`[${project.name}] --> Starting WebView binary packaging for: ${platform}`);
+        res.status(202).json({ message: 'Native WebView compilation sequence active.' });
+
+        // Background compile task
+        setTimeout(async () => {
+            const finalPackagePath = path.join(APPS_DIR, `${project.subdomain}_${platform}`);
+            
+            try {
+                const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
+
+                if (platform === 'windows') {
+                    // Create silent native VBScript wrapper directly to run natively without EXE header errors
+                    const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
+                    await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
+                    
+                    await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
+                    console.log(`[${project.name}] Windows Desktop launcher VBS compiled successfully.`);
+
+                } else if (platform === 'android') {
+                    // Inject WebView target configurations directly to baseline APK file template (using on-demand download check)
+                    await ensureBaseApkTemplate();
+                    
+                    if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
+                        throw new Error("Baseline template APK was not cached on server.");
+                    }
+
+                    // Pure binary byte appending (Avoids ZIP/unzipper parsing locks)
+                    const baseApkBuffer = await fs.readFile(TEMPLATE_APK_PATH);
+                    const configMarker = `[URL_START]${targetProjectUrl}[URL_END][TITLE_START]${cleanAppName}[TITLE_END]`;
+                    const patchedBuffer = Buffer.concat([baseApkBuffer, Buffer.from(configMarker, 'utf8')]);
+
+                    await fs.writeFile(`${finalPackagePath}.apk`, patchedBuffer);
+                    await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
+                    console.log(`[${project.name}] Android WebView APK compiled successfully.`);
+                }
+
+                if (req.file) {
+                    await fs.remove(req.file.path);
+                }
+            } catch (err) {
+                console.error(`Native App Compilation failure for project ${project.name}:`, err);
+                const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
+                await Project.findByIdAndUpdate(projectId, failField);
+                if (req.file) {
+                    await fs.remove(req.file.path);
+                }
+            }
+        }, 10000);
+
+    } catch (err) {
+        console.error("App Build Request failure:", err);
+        res.status(500).json({ message: 'Internal Server Error.' });
+    }
+});
+
 app.post('/api/builds/trigger', authenticateToken, async (req, res) => {
     const { projectId, platform } = req.body;
     try {
@@ -680,7 +758,7 @@ app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, re
 
             console.log(`[${project.projectName}] ... Extracting zip archive.`);
             
-            // Invoking defensive, path-traversal & zip-bomb protected extraction system instead of raw extraction [1.1.4]
+            // Invoking defensive, path-traversal & zip-bomb protected extraction system instead of raw extraction
             await extractZipSafely(req.file.path, tempExtractDir);
             
             console.log(`[${project.projectName}] ... Unzip successful.`);
