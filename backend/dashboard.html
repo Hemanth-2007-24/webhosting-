@@ -97,8 +97,8 @@
             </div>
         </div>
 
-        <!-- Standalone Instant Web-to-App Direct Compiler Panel -->
-        <div id="direct-compiler-panel" class="glass-card p-6 sm:p-8 rounded-[28px] max-w-3xl mx-auto space-y-6">
+        <!-- Standalone Instant Web-to-App Direct Compiler Panel (HIDDEN) -->
+        <div id="direct-compiler-panel" class="glass-card p-6 sm:p-8 rounded-[28px] max-w-3xl mx-auto space-y-6 hidden">
             <div class="flex items-center gap-3">
                 <div class="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
                     <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
@@ -112,16 +112,16 @@
             <form id="direct-compile-form" class="grid sm:grid-cols-2 gap-4">
                 <div class="sm:col-span-2">
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Website URL</label>
-                    <input type="url" id="direct-url" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="https://example.com" required>
+                    <input type="url" id="direct-url" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="https://example.com">
                 </div>
                 <div>
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Application Name</label>
-                    <input type="text" id="direct-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="My Native App" required>
+                    <input type="text" id="direct-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="My Native App">
                 </div>
                 <div>
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Target Platform</label>
-                    <select id="direct-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" required>
-                        <option value="android">Progressive Web App (PWA)</option>
+                    <select id="direct-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500">
+                        <option value="android">Android Mobile (.APK)</option>
                         <option value="windows">Windows Desktop (.VBS)</option>
                     </select>
                 </div>
@@ -261,7 +261,7 @@
                 <div>
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Target Platform</label>
                   <select id="app-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" required>
-                      <option value="android">Progressive Web App (PWA)</option>
+                      <option value="android">Android Mobile Application (.APK)</option>
                       <option value="windows">Windows Desktop Application (.VBS)</option>
                   </select>
                 </div>
@@ -360,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="mt-2 pt-2 border-t border-white/[0.05] space-y-1.5">
                                 <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Compiled Native Packages</span>
                                 <div class="flex flex-wrap gap-1.5">
-                                    ${project.appAndroidStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/android" class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-solid fa-square-rss"></i> PWA Package (.ZIP)</a>` : ''}
+                                    ${project.appAndroidStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/android" class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-android"></i> Android .APK</a>` : ''}
                                     ${project.appWindowsStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/windows" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> Windows .VBS</a>` : ''}
                                 </div>
                             </div>
@@ -749,7 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <i class="fa-solid fa-circle-check"></i> WebView package compilation successful!
                     </div>
                     <a href="${customDownloadUrl}" class="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-white rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1.5 shadow-lg">
-                        <i class="fa-solid fa-cloud-arrow-down"></i> Download ${platform === 'android' ? 'PWA (.ZIP)' : '.VBS'}
+                        <i class="fa-solid fa-cloud-arrow-down"></i> Download ${platform === 'android' ? '.APK' : '.VBS'}
                     </a>
                 `;
                 btn.disabled = false;

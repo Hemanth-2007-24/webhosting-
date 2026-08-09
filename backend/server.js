@@ -3,10 +3,6 @@
 // =================================================================
 
 require('dotenv').config();
-const dns = require('dns');
-// CRITICAL: Forces Node.js 18+ to prioritize IPv4 DNS resolutions to prevent 30-second Mongo Atlas connection timeouts
-dns.setDefaultResultOrder('ipv4first');
-
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -20,7 +16,6 @@ const mongoose = require('mongoose');
 const cuid = require('cuid');
 const unzipper = require('unzipper');
 const simpleGit = require('simple-git');
-const archiver = require('archiver');
 
 // --- CRITICAL UNCAUGHT EXCEPTION SAFETY HANDLERS ---
 process.on('uncaughtException', (err) => {
@@ -41,7 +36,7 @@ const PORT = process.env.PORT || 8080;
 
 if (!process.env.MONGO_URI) {
     console.warn("⚠️ WARNING: MONGO_URI environment variable is missing!");
-    console.warn("Please add MONGO_URI to your Back4App Container environment variables.");
+    console.warn("Please add MONGO_URI to your Back4App/Railway environment variables.");
     
     app.get('*', (req, res) => {
         res.status(500).send(`
@@ -50,7 +45,7 @@ if (!process.env.MONGO_URI) {
         `);
     });
     
-    app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Safe Mode server successfully listening on port ${PORT}`));
+    app.listen(PORT, () => console.log(`🚀 Safe Mode server successfully listening on port ${PORT}`));
     return; 
 }
 
@@ -94,6 +89,15 @@ const authenticateToken = (req, res, next) => {
         req.user = user;
         next();
     });
+};
+
+// --- ADMIN AUTHORIZATION MIDDLEWARE ---
+const requireAdmin = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ message: "Forbidden: Administrative privileges required." });
+    }
 };
 
 // --- SMART INDEX FINDER SYSTEM ---
@@ -236,7 +240,7 @@ async function extractZipSafely(zipPath, targetDir) {
         // Prevention: Malicious executable files extension blocker
         const ext = path.extname(file.path).toLowerCase();
         if (FORBIDDEN_EXTENSIONS.includes(ext)) {
-            throw new Error("Security Violation: Unauthorized file type '" + ext + "' found inside archive.");
+            throw new Error(`Security Violation: Unauthorized file type '${ext}' found inside archive.`);
         }
     }
 
@@ -571,9 +575,10 @@ app.get('/api/user/repos', authenticateToken, async (req, res) => {
 });
 
 // =================================================================
-// ==            COMPILER API (PWA & WINDOWS GENERATORS)          ==
+// ==                    BUILD ENGINE API                         ==
 // =================================================================
 
+// --- NATIVE APP COMPILER ROUTE (AUTHENTICATED WITH CORRECT authenticateToken) ---
 app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon'), async (req, res) => {
     const { platform, appName } = req.body;
     const projectId = req.params.id;
@@ -596,8 +601,8 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
         const updateField = platform === 'android' ? { appAndroidStatus: 'building', appName: cleanAppName } : { appWindowsStatus: 'building', appName: cleanAppName };
         await Project.findByIdAndUpdate(projectId, updateField);
 
-        console.log(`[${project.name}] --> Packaging PWA/Windows container for: ${platform}`);
-        res.status(202).json({ message: 'WebView compilation sequence active.' });
+        console.log(`[${project.name}] --> Starting WebView binary packaging for: ${platform}`);
+        res.status(202).json({ message: 'Native WebView compilation sequence active.' });
 
         // Background compile task
         setTimeout(async () => {
@@ -615,90 +620,21 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
                     console.log(`[${project.name}] Windows Desktop launcher VBS compiled successfully.`);
 
                 } else if (platform === 'android') {
-                    // Compile fully functional, ready-to-deploy Progressive Web Application (PWA) Zip Container
-                    const tempWorkspace = path.join(UPLOADS_DIR, `_app_compile_${project.id}_pwa`);
-                    await fs.ensureDir(tempWorkspace);
-                    await fs.emptyDir(tempWorkspace);
-
-                    const manifest = {
-                        name: cleanAppName,
-                        short_name: cleanAppName,
-                        start_url: targetProjectUrl,
-                        display: "standalone",
-                        background_color: project.themeColor || "#050816",
-                        theme_color: project.themeColor || "#6366F1",
-                        icons: [
-                            { src: "icon.png", sizes: "192x192", type: "image/png" },
-                            { src: "icon.png", sizes: "512x512", type: "image/png" }
-                        ]
-                    };
-
-                    const serviceWorker = `
-                        const CACHE_NAME = 'webhost-pwa-cache-v1';
-                        const urlsToCache = ['/', '/index.html'];
-
-                        self.addEventListener('install', event => {
-                            event.waitUntil(
-                                caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
-                            );
-                        });
-
-                        self.addEventListener('fetch', event => {
-                            event.respondWith(
-                                caches.match(event.request).then(response => {
-                                    return response || fetch(event.request);
-                                })
-                            );
-                        });
-                    `;
-
-                    const indexHtml = `
-                        <!DOCTYPE html>
-                        <html lang="en">
-                        <head>
-                            <meta charset="UTF-8">
-                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                            <title>${cleanAppName}</title>
-                            <link rel="manifest" href="manifest.json">
-                            <meta name="theme-color" content="${project.themeColor || '#6366F1'}">
-                            <script>
-                                if ('serviceWorker' in navigator) {
-                                    window.addEventListener('load', () => {
-                                        navigator.serviceWorker.register('sw.js')
-                                            .then(reg => console.log('Service Worker registered'))
-                                            .catch(err => console.log('Service Worker failed', err));
-                                    });
-                                }
-                            </script>
-                            <style>
-                                body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: ${project.themeColor || '#050816'}; }
-                                iframe { border: none; width: 100%; height: 100%; }
-                            </style>
-                        </head>
-                        <body>
-                            <iframe src="${targetProjectUrl}"></iframe>
-                        </body>
-                        </html>
-                    `;
-
-                    const readme = `WebHost Progressive Web App (PWA): ${cleanAppName}\n==================================================\n\n- Extract these files into your static project deployment folder on WebHost.\n- Ensure your custom icon is saved as "icon.png" in the same folder.\n- Redeploy your static site to activate PWA support.\n`;
-
-                    await fs.outputJson(path.join(tempWorkspace, 'manifest.json'), manifest);
-                    await fs.outputFile(path.join(tempWorkspace, 'sw.js'), serviceWorker);
-                    await fs.outputFile(path.join(tempWorkspace, 'index.html'), indexHtml);
-                    await fs.outputFile(path.join(tempWorkspace, 'README.txt'), readme);
-
-                    if (req.file) {
-                        await fs.copy(req.file.path, path.join(tempWorkspace, 'icon.png'));
-                    } else {
-                        await fs.outputFile(path.join(tempWorkspace, 'icon.png'), 'MOCK_ICON');
+                    // Inject WebView target configurations directly to baseline APK file template (using on-demand download check)
+                    await ensureBaseApkTemplate();
+                    
+                    if (!(await fs.pathExists(TEMPLATE_APK_PATH))) {
+                        throw new Error("Baseline template APK was not cached on server.");
                     }
 
-                    // Zip files together into final APK-mapped .zip package
-                    await zipDirectory(tempWorkspace, `${finalPackagePath}.apk`); // Maintained as .apk path internally to prevent breaks
+                    // Pure binary byte appending (Avoids ZIP/unzipper parsing locks)
+                    const baseApkBuffer = await fs.readFile(TEMPLATE_APK_PATH);
+                    const configMarker = `[URL_START]${targetProjectUrl}[URL_END][TITLE_START]${cleanAppName}[TITLE_END]`;
+                    const patchedBuffer = Buffer.concat([baseApkBuffer, Buffer.from(configMarker, 'utf8')]);
+
+                    await fs.writeFile(`${finalPackagePath}.apk`, patchedBuffer);
                     await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
-                    await fs.remove(tempWorkspace);
-                    console.log(`[${project.name}] Android PWA package compiled successfully.`);
+                    console.log(`[${project.name}] Android WebView APK compiled successfully.`);
                 }
 
                 if (req.file) {
@@ -726,7 +662,7 @@ app.post('/api/builds/trigger', authenticateToken, async (req, res) => {
         const project = await Project.findOne({ _id: projectId, createdBy: req.user.id });
         if (!project) return res.status(404).json({ message: "Project not found." });
 
-        const build = await BuildEngine.enqueueBuild(projectId, platform, req.protocol, req.get('host'));
+        const build = await BuildEngine.enqueueBuild(projectId, platform);
         res.status(202).json({ message: "App compilation pipeline queued.", buildId: build._id });
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -957,5 +893,4 @@ app.get('*', (req, res) => {
 });
 
 // --- SERVER INITIALIZATION ---
-// Explicitly binding to host 0.0.0.0 as required by Railway documentation to prevent port check failures
-app.listen(PORT, "0.0.0.0", () => console.log("🚀 WebHost Core Engine operational on port " + PORT));
+app.listen(PORT, () => console.log("🚀 WebHost Core Engine operational on port " + PORT));
