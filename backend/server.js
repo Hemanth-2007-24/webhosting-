@@ -53,7 +53,7 @@ fs.ensureDirSync(UPLOADS_DIR);
 fs.ensureDirSync(APPS_DIR);
 const upload = multer({ dest: UPLOADS_DIR });
 
-// Modified to accept JWT Token via query string for safe file downloads via <a> tags
+// Accepting Token in headers or query parameters (for direct browser file downloads)
 const authenticateToken = (req, res, next) => {
     const token = req.headers['authorization']?.split(' ')[1] || req.query.token;
     if (!token) return res.status(401).json({ message: "Access Token missing." });
@@ -243,11 +243,11 @@ app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, re
 });
 
 // =================================================================
-// ==   PWA INJECTION (ANDROID/WINDOWS) & WINDOWS VBS COMPILER    ==
+// ==   APP STUDIO: NATIVE PWA (ANDROID) & VBS (WINDOWS) PROCESS  ==
 // =================================================================
 
 app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon'), async (req, res) => {
-    const { platform, appName } = req.body;
+    const { appName } = req.body;
     const projectId = req.params.id;
     const cleanAppName = (appName || 'PWA App').trim();
 
@@ -255,35 +255,47 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
         const project = await Project.findById(projectId);
         if (!project || project.createdBy.toString() !== req.user.id) return res.status(404).json({ message: 'Unauthorized' });
 
-        const updateField = platform === 'android' ? { appAndroidStatus: 'building', appName: cleanAppName } : { appWindowsStatus: 'building', appName: cleanAppName };
-        await Project.findByIdAndUpdate(projectId, updateField);
+        // Force both building statuses so we give the user both formats at once
+        await Project.findByIdAndUpdate(projectId, { 
+            appAndroidStatus: 'building', 
+            appWindowsStatus: 'building', 
+            appName: cleanAppName 
+        });
 
-        res.status(202).json({ message: 'Compilation sequence active.' });
+        res.status(202).json({ message: 'Compilation sequence active for Windows and Android.' });
 
         setTimeout(async () => {
-            const finalPackagePath = path.join(APPS_DIR, `${project.subdomain}_${platform}`);
+            const finalWindowsPackagePath = path.join(APPS_DIR, `${project.subdomain}_windows`);
             
             try {
                 const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
                 const deployDir = path.join(__dirname, 'deployments', projectId.toString());
-                const fallbackIcon = "https://cdn-icons-png.flaticon.com/512/5266/5266152.png";
-                const userIcon = project.iconUrl || fallbackIcon;
                 
-                // 1. DYNAMIC PROGRESSIVE WEB APP (PWA) MANIFEST INJECTION
-                // Applies the EXACT requested snippet configuration.
-                // NOTE: 'start_url' uses "./" instead of "/" to ensure correct sub-directory scoping when proxied
+                // 1. Process custom icon given by user, save to static directory
+                let iconFilename = null;
+                if (req.file) {
+                    const ext = path.extname(req.file.originalname) || '.png';
+                    iconFilename = `app-icon${ext}`;
+                    await fs.copy(req.file.path, path.join(deployDir, iconFilename));
+                    await fs.remove(req.file.path); // Cleanup temp
+                }
+                
+                const iconSrc = iconFilename ? `./${iconFilename}` : "https://cdn-icons-png.flaticon.com/512/5266/5266152.png";
+                const iconType = iconFilename && (iconFilename.toLowerCase().endsWith('.jpg') || iconFilename.toLowerCase().endsWith('.jpeg')) ? 'image/jpeg' : 'image/png';
+                
+                // 2. DYNAMIC PROGRESSIVE WEB APP (PWA) MANIFEST INJECTION (Enables Android Web Install)
                 if (await fs.pathExists(deployDir)) {
-                    console.log(`[${project.projectName}] Injecting PWA Manifest and Service Worker...`);
+                    console.log(`[${project.projectName}] Injecting custom App Name and Icon into PWA files...`);
                     const manifest = {
                         "name": cleanAppName,
-                        "short_name": "PWA App",
+                        "short_name": cleanAppName.substring(0, 12),
                         "start_url": "./",
                         "display": "standalone",
                         "background_color": "#ffffff",
                         "theme_color": "#2196F3",
                         "icons": [
-                            { "src": userIcon, "sizes": "192x192", "type": "image/png" },
-                            { "src": userIcon, "sizes": "512x512", "type": "image/png" }
+                            { "src": iconSrc, "sizes": "192x192", "type": iconType },
+                            { "src": iconSrc, "sizes": "512x512", "type": iconType }
                         ]
                     };
                     await fs.writeJson(path.join(deployDir, 'manifest.json'), manifest, { spaces: 2 });
@@ -298,7 +310,7 @@ self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then
                     if (await fs.pathExists(indexPath)) {
                         let html = await fs.readFile(indexPath, 'utf8');
                         if (!html.includes('manifest.json')) {
-                            // Using the exact installer snippet requested
+                            // Using the exact installer snippet requested by user
                             const injection = `
   <script>
     if ('serviceWorker' in navigator) {
@@ -314,23 +326,25 @@ self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then
                     }
                 }
 
-                // 2. NATIVE DESKTOP LAUNCHER 
-                if (platform === 'windows') {
-                    const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
-                    await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
-                    await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
-                } else if (platform === 'android') {
-                    // Android PWA configuration completes successfully natively
-                    await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
-                }
+                // 3. NATIVE DESKTOP LAUNCHER (WINDOWS)
+                const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
+                await fs.outputFile(`${finalWindowsPackagePath}.vbs`, vbsScript);
                 
-                if (req.file) await fs.remove(req.file.path);
+                // Finalize both statuses
+                await Project.findByIdAndUpdate(projectId, { 
+                    appWindowsStatus: 'ready',
+                    appAndroidStatus: 'ready' 
+                });
+                
             } catch (err) {
-                const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
-                await Project.findByIdAndUpdate(projectId, failField);
-                if (req.file) await fs.remove(req.file.path);
+                console.error("App Build failed:", err);
+                await Project.findByIdAndUpdate(projectId, { 
+                    appAndroidStatus: 'failed', 
+                    appWindowsStatus: 'failed' 
+                });
+                if (req.file && await fs.pathExists(req.file.path)) await fs.remove(req.file.path);
             }
-        }, 3000);
+        }, 2000);
 
     } catch (err) {
         res.status(500).json({ message: err.message });
