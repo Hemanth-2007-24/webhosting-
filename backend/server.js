@@ -64,23 +64,8 @@ const authenticateToken = (req, res, next) => {
 
 const requireAdmin = (req, res, next) => {
     if (req.user?.role === 'admin') next();
-    else res.status(403).json({ message: "Forbidden" });
+    else res.status(403).json({ message: "Forbidden: Admin required." });
 };
-
-// --- BASELINE APK TEMPLATE LOGIC ---
-const TEMPLATE_APK_PATH = path.join(APPS_DIR, 'webview_base_template.apk');
-async function ensureBaseApkTemplate() {
-    if (await fs.pathExists(TEMPLATE_APK_PATH)) return;
-    try {
-        const response = await fetch('https://raw.githubusercontent.com/bishwassagar/Android-Webview-App/master/app/release/app-release.apk');
-        const buffer = await response.arrayBuffer();
-        await fs.writeFile(TEMPLATE_APK_PATH, Buffer.from(buffer));
-        console.log("✅ Baseline APK template cached.");
-    } catch (err) {
-        console.error("❌ APK Template Download failed.", err.message);
-    }
-}
-ensureBaseApkTemplate();
 
 // --- SMART DIRECTORY INDEX FINDER ---
 async function findIndexHtmlRecursive(dir, currentDepth, maxDepth) {
@@ -124,6 +109,13 @@ app.post('/api/auth/login', async (req, res) => {
         const { email, password } = req.body;
         const user = await User.findOne({ email });
         if (!user || !(await bcrypt.compare(password, user.password))) return res.status(400).json({ message: "Invalid credentials." });
+        
+        // Auto-promote Admin check
+        if (email.toLowerCase() === (process.env.ADMIN_EMAIL || '').toLowerCase() && user.role !== 'admin') {
+            user.role = 'admin';
+            await user.save();
+        }
+
         const accessToken = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET || 'fallback_secret_key', { expiresIn: '1h' });
         res.json({ accessToken });
     } catch (err) { res.status(500).json({ message: err.message }); }
@@ -251,13 +243,13 @@ app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, re
 });
 
 // =================================================================
-// ==  PWA INJECTION & NATIVE APK/WINDOWS VBS COMPILER ROUTE      ==
+// ==   PWA INJECTION (ANDROID/WINDOWS) & WINDOWS VBS COMPILER    ==
 // =================================================================
 
 app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon'), async (req, res) => {
     const { platform, appName } = req.body;
     const projectId = req.params.id;
-    const cleanAppName = (appName || 'Web Launcher').trim();
+    const cleanAppName = (appName || 'PWA App').trim();
 
     try {
         const project = await Project.findById(projectId);
@@ -274,46 +266,62 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
             try {
                 const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
                 const deployDir = path.join(__dirname, 'deployments', projectId.toString());
+                const fallbackIcon = "https://cdn-icons-png.flaticon.com/512/5266/5266152.png";
+                const userIcon = project.iconUrl || fallbackIcon;
                 
                 // 1. DYNAMIC PROGRESSIVE WEB APP (PWA) MANIFEST INJECTION
-                // Doing this makes the site installable natively on Android Chrome and Windows Desktop
+                // Configures the live deployment to function natively as a PWA
+                // Uses explicit snippet provided by user, adjusting `start_url` to "./" for sub-directory proxy compatibility
                 if (await fs.pathExists(deployDir)) {
                     console.log(`[${project.projectName}] Injecting PWA Manifest and Service Worker...`);
                     const manifest = {
-                        name: cleanAppName, short_name: cleanAppName,
-                        start_url: `./`, display: "standalone",
-                        background_color: project.themeColor || "#ffffff", theme_color: project.themeColor || "#6366F1",
-                        icons: [{ src: project.iconUrl || "https://cdn-icons-png.flaticon.com/512/5266/5266152.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }]
+                        "name": cleanAppName,
+                        "short_name": "PWA App",
+                        "start_url": "./",
+                        "display": "standalone",
+                        "background_color": "#ffffff",
+                        "theme_color": "#2196F3",
+                        "icons": [
+                            { "src": userIcon, "sizes": "192x192", "type": "image/png" },
+                            { "src": userIcon, "sizes": "512x512", "type": "image/png" }
+                        ]
                     };
                     await fs.writeJson(path.join(deployDir, 'manifest.json'), manifest, { spaces: 2 });
                     
-                    const swCode = `const CACHE_NAME = 'pwa-cache-${projectId}';\nself.addEventListener('install', e => { e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(['./', './index.html', './manifest.json']))); });\nself.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then(res => res || fetch(e.request))); });`;
-                    await fs.writeFile(path.join(deployDir, 'service-worker.js'), swCode.trim());
+                    const swCode = `
+self.addEventListener('install', e => { e.waitUntil(caches.open('pwa-cache').then(c => c.addAll(['./', './index.html', './manifest.json']))); });
+self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then(res => res || fetch(e.request))); });
+                    `;
+                    await fs.writeFile(path.join(deployDir, 'sw.js'), swCode.trim());
                     
                     const indexPath = path.join(deployDir, 'index.html');
                     if (await fs.pathExists(indexPath)) {
                         let html = await fs.readFile(indexPath, 'utf8');
                         if (!html.includes('manifest.json')) {
-                            const injection = `\n<!-- PWA Setup --><link rel="manifest" href="./manifest.json">\n<meta name="theme-color" content="${project.themeColor || '#6366F1'}">\n<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./service-worker.js');});}</script>\n</head>`;
+                            // Using the exact installer snippet requested
+                            const injection = `
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('Service Worker Registered'));
+    }
+  </script>
+  <link rel="manifest" href="manifest.json">
+</head>`;
                             html = html.replace(/<\/head>/i, injection);
                             await fs.writeFile(indexPath, html);
                         }
                     }
                 }
 
-                // 2. NATIVE DESKTOP LAUNCHER & ANDROID APK COMPILER
+                // 2. NATIVE DESKTOP LAUNCHER 
                 if (platform === 'windows') {
                     // Windows PWA Desktop Wrapper (.VBS) executing MS Edge native PWA mode
                     const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
                     await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
                     await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
                 } else if (platform === 'android') {
-                    // Android WebView binary patching
-                    await ensureBaseApkTemplate();
-                    const baseApkBuffer = await fs.readFile(TEMPLATE_APK_PATH);
-                    const configMarker = `[URL_START]${targetProjectUrl}[URL_END][TITLE_START]${cleanAppName}[TITLE_END]`;
-                    const patchedBuffer = Buffer.concat([baseApkBuffer, Buffer.from(configMarker, 'utf8')]);
-                    await fs.writeFile(`${finalPackagePath}.apk`, patchedBuffer);
+                    // Android PWA configuration completes successfully
                     await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
                 }
                 
@@ -323,7 +331,7 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
                 await Project.findByIdAndUpdate(projectId, failField);
                 if (req.file) await fs.remove(req.file.path);
             }
-        }, 5000);
+        }, 3000);
 
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -336,8 +344,7 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
 
 app.post('/api/build-app-direct', authenticateToken, upload.single('icon'), async (req, res) => {
     try {
-        const { url, appName, platform } = req.body;
-        const cleanAppName = (appName || 'Web App').trim();
+        const { url, platform } = req.body;
         const buildId = cuid();
         
         setTimeout(async () => {
@@ -345,14 +352,8 @@ app.post('/api/build-app-direct', authenticateToken, upload.single('icon'), asyn
             if (platform === 'windows') {
                 const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${url} --window-size=1280,800", 0, false\n`;
                 await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
-            } else if (platform === 'android') {
-                await ensureBaseApkTemplate();
-                const baseApkBuffer = await fs.readFile(TEMPLATE_APK_PATH);
-                const configMarker = `[URL_START]${url}[URL_END][TITLE_START]${cleanAppName}[TITLE_END]`;
-                const patchedBuffer = Buffer.concat([baseApkBuffer, Buffer.from(configMarker, 'utf8')]);
-                await fs.writeFile(`${finalPackagePath}.apk`, patchedBuffer);
             }
-        }, 2000);
+        }, 1500);
 
         const downloadUrl = `/api/downloads/direct_${buildId}/${platform}`;
         res.json({ message: "Compiling...", downloadUrl });
@@ -365,28 +366,59 @@ app.post('/api/build-app-direct', authenticateToken, upload.single('icon'), asyn
 // ==                     DOWNLOAD ROUTES                         ==
 // =================================================================
 
-app.get('/api/projects/:id/download-app/:platform', async (req, res) => {
+app.get('/api/projects/:id/download-app/windows', async (req, res) => {
     try {
         const project = await Project.findById(req.params.id);
         if (!project) return res.status(404).send("Project not found.");
         
-        const platform = req.params.platform;
-        const extension = platform === 'android' ? '.apk' : '.vbs';
-        const filePath = path.join(APPS_DIR, `${project.subdomain}_${platform}${extension}`);
+        const filePath = path.join(APPS_DIR, `${project.subdomain}_windows.vbs`);
         
         if (!(await fs.pathExists(filePath))) return res.status(404).send("Application package not found or still compiling.");
-        res.download(filePath, `${(project.appName || 'App').replace(/\s+/g, '_')}_${platform}${extension}`);
+        res.download(filePath, `${(project.appName || 'App').replace(/\s+/g, '_')}_Launcher.vbs`);
     } catch (err) { res.status(500).send(err.message); }
 });
 
-app.get('/api/downloads/:id/:platform', async (req, res) => {
+app.get('/api/downloads/:id/windows', async (req, res) => {
     try {
-        const { id, platform } = req.params;
-        const extension = platform === 'android' ? '.apk' : '.vbs';
-        const filePath = path.join(APPS_DIR, `${id}${extension}`);
+        const { id } = req.params;
+        const filePath = path.join(APPS_DIR, `${id}.vbs`);
         if (!(await fs.pathExists(filePath))) return res.status(404).send("File not ready.");
-        res.download(filePath, `Compiled_App${extension}`);
+        res.download(filePath, `PWA_Launcher.vbs`);
     } catch (err) { res.status(500).send(err.message); }
+});
+
+// =================================================================
+// ==                 ADMIN MANAGEMENT ENDPOINTS                  ==
+// =================================================================
+
+app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const totalUsers = await User.countDocuments();
+        const totalProjects = await Project.countDocuments();
+        const readyProjects = await Project.countDocuments({ status: 'ready' });
+        res.json({ totalUsers, totalProjects, activeDeployments: readyProjects });
+    } catch (err) { res.status(500).json({ message: "Server error compiling platform statistics." }); }
+});
+
+app.get('/api/admin/projects', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const projects = await Project.find().populate('createdBy', 'email').sort({ createdAt: -1 });
+        res.json(projects);
+    } catch (err) { res.status(500).json({ message: "Server error retrieving system projects." }); }
+});
+
+app.delete('/api/admin/projects/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const project = await Project.findById(req.params.id);
+        if (!project) return res.status(404).json({ message: "Project not found." });
+
+        const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
+        const projectPath = path.join(DEPLOYMENTS_DIR, project._id.toString());
+        
+        await fs.remove(projectPath);
+        await Project.findByIdAndDelete(req.params.id);
+        res.json({ message: "Project administratively deleted successfully." });
+    } catch (err) { res.status(500).json({ message: "Server error deleting project." }); }
 });
 
 // =================================================================

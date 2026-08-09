@@ -12,50 +12,26 @@
         tailwind.config = {
             theme: {
                 extend: {
-                    colors: {
-                        primary: '#6366f1',
-                        'primary-hover': '#4f46e5',
-                        'bg-dark': '#050816',
-                        'bg-light': '#0F172A',
-                        accent: '#6366F1'
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        display: ['Space Grotesk', 'sans-serif']
-                    }
+                    colors: { primary: '#6366f1', 'primary-hover': '#4f46e5', 'bg-dark': '#050816', 'bg-light': '#0F172A', accent: '#6366F1' },
+                    fontFamily: { sans: ['Inter', 'sans-serif'], display: ['Space Grotesk', 'sans-serif'] }
                 }
             }
         }
     </script>
     <style>
-        .glass-card {
-            background-color: rgba(17, 24, 39, 0.65);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-        }
+        .glass-card { background-color: rgba(17, 24, 39, 0.65); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
         .status-badge { padding: 0.25rem 0.65rem; border-radius: 99px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: inline-block; }
         .status-badge.ready { background-color: rgba(16, 185, 129, 0.12); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.25); }
         .status-badge.deploying, .status-badge.queued { background-color: rgba(234, 179, 8, 0.12); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.25); }
         .status-badge.failed { background-color: rgba(239, 68, 68, 0.12); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.25); }
-        
-        #modal-backdrop {
-            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .modal {
-            transform: scale(0.95);
-            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        #modal-backdrop.active .modal {
-            transform: scale(1);
-            opacity: 1;
-        }
+        #modal-backdrop { transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .modal { transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        #modal-backdrop.active .modal { transform: scale(1); opacity: 1; }
     </style>
 </head>
 <body class="font-sans bg-bg-dark text-white min-h-screen relative overflow-x-hidden selection:bg-indigo-500 selection:text-white">
     <script>if (!localStorage.getItem('token')) { window.location.replace('/index.html'); }</script>
 
-    <!-- Ambient Glow BG -->
     <div class="absolute inset-0 pointer-events-none z-0">
         <div class="absolute top-[5%] left-[10%] w-96 h-96 rounded-full bg-indigo-600/10 blur-[120px]"></div>
         <div class="absolute bottom-[20%] right-[10%] w-[500px] h-[500px] rounded-full bg-violet-600/10 blur-[150px]"></div>
@@ -65,9 +41,6 @@
     <header class="sticky top-0 z-50 w-full bg-bg-dark/75 backdrop-blur-xl border-b border-white/[0.06] h-16 flex items-center justify-between px-6 box-border">
         <div class="flex items-center gap-8">
             <a href="/" class="logo flex items-center gap-2 tracking-tight font-display font-extrabold text-xl">WebHost</a>
-            <div class="hidden md:flex gap-1">
-                <button class="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/[0.02]">Dashboard</button>
-            </div>
         </div>
         <div class="flex items-center gap-3">
             <button id="logout-btn" class="px-3.5 py-1.5 text-xs font-bold bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-lg transition-all">Logout</button>
@@ -79,7 +52,7 @@
         <div class="bg-gradient-to-r from-slate-900/60 to-slate-800/20 border border-white/[0.05] p-8 sm:p-10 rounded-[28px] shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div class="space-y-2">
                 <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">My Projects Dashboard</h2>
-                <p class="text-slate-400 text-sm max-w-lg">Provision sandboxed containers. Deploy safely from Git or zip and convert instantly to native apps.</p>
+                <p class="text-slate-400 text-sm max-w-lg">Deploy static sites securely and convert instantly into native Android PWAs and Windows Desktop launchers.</p>
             </div>
             <div class="flex gap-3">
                 <button id="new-project-btn" class="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all shadow-lg text-sm"><i class="fa-solid fa-plus mr-1"></i> New Project</button>
@@ -94,7 +67,7 @@
                 </div>
                 <div>
                     <h3 class="font-display font-extrabold text-xl text-white">Instant Web-to-App Studio</h3>
-                    <p class="text-xs text-slate-400">Convert any live URL into a standalone Android APK or Windows PWA launcher.</p>
+                    <p class="text-xs text-slate-400">Convert any live URL into a standalone Windows PWA launcher.</p>
                 </div>
             </div>
             
@@ -110,21 +83,14 @@
                 <div>
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Target Platform</label>
                     <select id="direct-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500">
-                        <option value="android">Android Mobile (.APK)</option>
                         <option value="windows">Windows PWA Desktop (.VBS)</option>
                     </select>
                 </div>
                 <div class="sm:col-span-2 flex flex-col sm:flex-row items-end justify-between gap-4 pt-2">
-                    <div class="flex-1 w-full">
-                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">App Icon (Optional)</label>
-                        <input type="file" id="direct-icon" class="w-full p-2.5 bg-black/45 border border-white/[0.08] rounded-xl text-xs" accept="image/png, image/jpeg">
-                    </div>
-                    <button type="submit" id="direct-compile-btn" class="w-full sm:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all uppercase text-xs tracking-wider h-11">Compile Application</button>
+                    <button type="submit" id="direct-compile-btn" class="w-full sm:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all uppercase text-xs tracking-wider h-11 ml-auto">Compile Application</button>
                 </div>
             </form>
-            
-            <div id="direct-build-status" class="hidden p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm">
-            </div>
+            <div id="direct-build-status" class="hidden p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm"></div>
         </div>
 
         <div id="projects-list" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -141,6 +107,17 @@
     <!-- BACKDROP & MODAL MANAGER -->
     <div id="modal-backdrop" class="fixed inset-0 bg-black/85 backdrop-blur-md hidden items-center justify-center p-4 z-50 opacity-0">
         
+        <!-- ANDROID QR CODE MODAL -->
+        <div id="qr-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-sm hidden relative text-center">
+            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
+            <h2 class="font-display font-extrabold text-2xl mb-2">Install Android PWA</h2>
+            <p class="text-xs text-slate-400 mb-6">Scan this QR code with your Android phone. Open it in Chrome and tap <strong>"Add to Home screen"</strong> when prompted.</p>
+            <div class="bg-white p-4 rounded-xl inline-block mb-4 shadow-lg shadow-white/5">
+                <img id="qr-image" src="" alt="QR Code" class="w-48 h-48">
+            </div>
+            <p class="text-[10px] text-slate-500 font-mono break-all" id="qr-url-text"></p>
+        </div>
+
         <div id="new-project-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
             <h2 class="font-display font-extrabold text-2xl mb-4">Create Container</h2>
@@ -205,17 +182,17 @@
         <div id="app-studio-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
             <h2 class="font-display font-extrabold text-2xl mb-2">App & PWA Studio</h2>
-            <p class="text-xs text-slate-500 mb-6">Compile deployed website into Native Android APK and Windows PWA (.VBS). This also natively configures the web deployment as a PWA.</p>
+            <p class="text-xs text-slate-500 mb-6">Configure the deployment as an Android PWA, or compile a Windows Desktop (.VBS) wrapper.</p>
             <form id="app-studio-form" class="space-y-4">
                 <input type="hidden" id="app-project-id">
                 <div>
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Application Name</label>
-                  <input type="text" id="app-name-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500" placeholder="My Mobile App" required>
+                  <input type="text" id="app-name-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500" placeholder="My App Name" required>
                 </div>
                 <div>
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Target Platform</label>
                   <select id="app-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" required>
-                      <option value="android">Android Native Application (.APK)</option>
+                      <option value="android">Android PWA (Web Install)</option>
                       <option value="windows">Windows PWA Desktop (.VBS)</option>
                   </select>
                 </div>
@@ -225,7 +202,7 @@
                 </div>
                 <div class="flex justify-end gap-2 pt-4">
                     <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs" data-close-modal>Cancel</button>
-                    <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs">Compile</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs">Compile App Configuration</button>
                 </div>
             </form>
         </div>
@@ -276,6 +253,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 projects.forEach(project => { 
                     const card = document.createElement('div'); 
                     card.className = 'glass-card p-6 rounded-[24px] hover:border-white/[0.15] hover:translate-y-[-2px] transition-all flex flex-col justify-between gap-4'; 
+                    const cleanSubdomain = project.subdomain;
+                    const fullProjectUrl = `${window.location.origin}/${cleanSubdomain}`;
 
                     let appDownloadsHTML = '';
                     if (project.appAndroidStatus === 'ready' || project.appWindowsStatus === 'ready') {
@@ -283,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="mt-2 pt-2 border-t border-white/[0.05] space-y-1.5">
                                 <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Compiled Packages</span>
                                 <div class="flex flex-wrap gap-1.5">
-                                    ${project.appAndroidStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/android" class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-android"></i> Android .APK</a>` : ''}
+                                    ${project.appAndroidStatus === 'ready' ? `<button class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-bold transition-all qr-btn" data-url="${fullProjectUrl}"><i class="fa-brands fa-android"></i> Android PWA (QR)</button>` : ''}
                                     ${project.appWindowsStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/windows" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> Windows .VBS</a>` : ''}
                                 </div>
                             </div>
@@ -296,7 +275,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     else badgeHTML = `<span class="status-badge ${project.status || 'ready'}">${project.status || 'ready'}</span>`;
 
                     const projectTitle = project.projectName || 'App';
-                    const cleanSubdomain = project.subdomain;
 
                     card.innerHTML = `
                         <div class="space-y-3">
@@ -377,6 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const deployBtn = e.target.closest('.deploy-btn'); 
         const deleteBtn = e.target.closest('.delete-btn'); 
         const appStudioBtn = e.target.closest('.app-studio-btn');
+        const qrBtn = e.target.closest('.qr-btn'); // Android QR Trigger
 
         if (deployBtn) { 
             document.getElementById('deploy-project-name').textContent = deployBtn.dataset.name; 
@@ -389,6 +368,12 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('app-project-id').value = appStudioBtn.dataset.id;
             document.getElementById('app-name-input').value = appStudioBtn.dataset.name;
             showModal(document.getElementById('app-studio-modal'));
+        }
+        if (qrBtn) {
+            const url = qrBtn.dataset.url;
+            document.getElementById('qr-image').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+            document.getElementById('qr-url-text').textContent = url;
+            showModal(document.getElementById('qr-modal'));
         }
         if (deleteBtn && confirm(`Remove instance?`)) { 
             try { 
@@ -450,10 +435,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (iconFile) formData.append('icon', iconFile);
 
             await apiFetch(`/projects/${projectId}/build-app`, { method: 'POST', body: formData });
-            showToast('Compilation Active!', 'success');
+            showToast('App Configuration Active!', 'success');
             hideModals(); fetchAndRenderProjects(true);
         } catch (error) { showToast(error.message, 'error'); } 
-        finally { btn.disabled = false; btn.innerHTML = 'Compile Application'; }
+        finally { btn.disabled = false; btn.innerHTML = 'Compile App Configuration'; }
     });
 
     document.getElementById('direct-compile-form').addEventListener('submit', async (e) => {
@@ -477,9 +462,9 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => {
                 statusDiv.innerHTML = `
                     <div class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check"></i> Package ready!</div>
-                    <a href="${data.downloadUrl}" target="_blank" class="px-4 py-2 bg-emerald-500/10 text-emerald-400 hover:text-white rounded-lg text-xs font-bold"><i class="fa-solid fa-cloud-arrow-down"></i> Download</a>`;
+                    <a href="${data.downloadUrl}" target="_blank" class="px-4 py-2 bg-emerald-500/10 text-emerald-400 hover:text-white rounded-lg text-xs font-bold"><i class="fa-solid fa-cloud-arrow-down"></i> Download Launcher</a>`;
                 btn.disabled = false; btn.innerHTML = 'Compile Application';
-            }, 6000);
+            }, 3000);
         } catch (error) { showToast(error.message, 'error'); btn.disabled = false; btn.innerHTML = 'Compile Application'; }
     });
 
