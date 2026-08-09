@@ -6,9 +6,9 @@ const { Queue, Worker } = require('bullmq');
 const { exec } = require('child_process');
 const fs = require('fs-extra');
 const path = require('path');
-const { Project, Build, GeneratedApp, LoggerService } = require('./database');
+const { Project, Build, GeneratedApp } = require('./database');
 const AndroidBuilder = require('./androidBuilder');
-const { ZipService } = require('./services');
+const { ZipService, LoggerService } = require('./services'); // Corrected LoggerService import location
 
 const REDIS_CONNECTION = {
     host: process.env.REDIS_HOST || '127.0.0.1',
@@ -124,7 +124,7 @@ class BuildEngine {
                 if (process.platform !== 'darwin') app.quit();
             });
 
-            ${customMainInject}
+            \${customMainInject}
         `);
 
         // preload.js
@@ -135,7 +135,7 @@ class BuildEngine {
                     new Notification(title, { body: body });
                 }
             });
-            ${customPreloadInject}
+            \${customPreloadInject}
         `);
 
         // electron-builder.json

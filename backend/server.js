@@ -16,6 +16,7 @@ const mongoose = require('mongoose');
 const cuid = require('cuid');
 const unzipper = require('unzipper');
 const simpleGit = require('simple-git');
+const archiver = require('archiver'); // Added missing archiver import
 
 // --- CRITICAL UNCAUGHT EXCEPTION SAFETY HANDLERS ---
 // Prevents any runtime compilation, connection, or database errors from crashing the Node container process on Back4app.
