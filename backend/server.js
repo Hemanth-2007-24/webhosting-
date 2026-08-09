@@ -254,19 +254,31 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
         const project = await Project.findById(projectId);
         if (!project || project.createdBy.toString() !== req.user.id) return res.status(404).json({ message: 'Unauthorized' });
 
-        const updateField = platform === 'android' ? { appAndroidStatus: 'building', appName: cleanAppName } : { appWindowsStatus: 'building', appName: cleanAppName };
-        await Project.findByIdAndUpdate(projectId, updateField);
+        // Force 'building' status directly using Native Mongo Driver to bypass schema rules
+        const updateField = platform === 'android' ? 
+            { appAndroidStatus: 'building', appName: cleanAppName } : 
+            { appWindowsStatus: 'building', appName: cleanAppName };
+            
+        await Project.collection.updateOne(
+            { _id: new mongoose.Types.ObjectId(projectId) },
+            { $set: updateField }
+        );
 
         res.status(202).json({ message: 'Compilation sequence active.' });
 
         setTimeout(async () => {
             const finalPackagePath = path.join(APPS_DIR, `${project.subdomain}_${platform}`);
+            const deployDir = path.join(__dirname, 'deployments', projectId.toString());
             
             try {
+                // FORCE create target deployments folder to prevent file-write crashes
+                await fs.ensureDir(deployDir);
+
                 const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
-                const deployDir = path.join(__dirname, 'deployments', projectId.toString());
+                const fallbackIcon = "https://cdn-icons-png.flaticon.com/512/5266/5266152.png";
+                let iconRelativePath = fallbackIcon;
                 
-                let iconRelativePath = "https://cdn-icons-png.flaticon.com/512/5266/5266152.png";
+                // Save custom icon to deployment folder safely
                 if (req.file) {
                     const ext = path.extname(req.file.originalname).toLowerCase() || '.png';
                     const iconName = `app-icon-${Date.now()}${ext}`;
@@ -275,38 +287,41 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
                     await fs.copy(req.file.path, targetIconPath);
                     iconRelativePath = `./${iconName}`; 
                     
-                    await Project.findByIdAndUpdate(projectId, { iconUrl: iconRelativePath });
+                    await Project.collection.updateOne(
+                        { _id: new mongoose.Types.ObjectId(projectId) },
+                        { $set: { iconUrl: iconRelativePath } }
+                    );
                     await fs.remove(req.file.path);
                 } else if (project.iconUrl) {
                     iconRelativePath = project.iconUrl;
                 }
                 
-                if (await fs.pathExists(deployDir)) {
-                    const manifest = {
-                        "name": cleanAppName,
-                        "short_name": cleanAppName.substring(0, 15),
-                        "start_url": "./",
-                        "display": "standalone",
-                        "background_color": "#ffffff",
-                        "theme_color": "#2196F3",
-                        "icons": [
-                            { "src": iconRelativePath, "sizes": "192x192", "type": "image/png" },
-                            { "src": iconRelativePath, "sizes": "512x512", "type": "image/png" }
-                        ]
-                    };
-                    await fs.writeJson(path.join(deployDir, 'manifest.json'), manifest, { spaces: 2 });
-                    
-                    const swCode = `
+                // DYNAMIC PROGRESSIVE WEB APP (PWA) MANIFEST INJECTION
+                const manifest = {
+                    "name": cleanAppName,
+                    "short_name": "PWA App",
+                    "start_url": "./",
+                    "display": "standalone",
+                    "background_color": "#ffffff",
+                    "theme_color": "#2196F3",
+                    "icons": [
+                        { "src": iconRelativePath, "sizes": "192x192", "type": "image/png" },
+                        { "src": iconRelativePath, "sizes": "512x512", "type": "image/png" }
+                    ]
+                };
+                await fs.writeJson(path.join(deployDir, 'manifest.json'), manifest, { spaces: 2 });
+                
+                const swCode = `
 self.addEventListener('install', e => { e.waitUntil(caches.open('pwa-cache-${projectId}').then(c => c.addAll(['./', './index.html', './manifest.json']))); });
 self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then(res => res || fetch(e.request))); });
-                    `;
-                    await fs.writeFile(path.join(deployDir, 'sw.js'), swCode.trim());
-                    
-                    const indexPath = path.join(deployDir, 'index.html');
-                    if (await fs.pathExists(indexPath)) {
-                        let html = await fs.readFile(indexPath, 'utf8');
-                        if (!html.includes('manifest.json')) {
-                            const injection = `
+                `;
+                await fs.writeFile(path.join(deployDir, 'sw.js'), swCode.trim());
+                
+                const indexPath = path.join(deployDir, 'index.html');
+                if (await fs.pathExists(indexPath)) {
+                    let html = await fs.readFile(indexPath, 'utf8');
+                    if (!html.includes('manifest.json')) {
+                        const injection = `
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js')
@@ -315,24 +330,34 @@ self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then
   </script>
   <link rel="manifest" href="manifest.json">
 </head>`;
-                            html = html.replace(/<\/head>/i, injection);
-                            await fs.writeFile(indexPath, html);
-                        }
+                        html = html.replace(/<\/head>/i, injection);
+                        await fs.writeFile(indexPath, html);
                     }
                 }
 
+                // 2. NATIVE DESKTOP LAUNCHER 
                 if (platform === 'windows') {
                     const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
                     await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
-                    await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
+                    
+                    await Project.collection.updateOne(
+                        { _id: new mongoose.Types.ObjectId(projectId) },
+                        { $set: { appWindowsStatus: 'ready' } }
+                    );
                 } else if (platform === 'android') {
-                    await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
+                    await Project.collection.updateOne(
+                        { _id: new mongoose.Types.ObjectId(projectId) },
+                        { $set: { appAndroidStatus: 'ready' } }
+                    );
                 }
                 
             } catch (err) {
+                console.error("Worker compile exception: ", err);
                 const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
-                await Project.findByIdAndUpdate(projectId, failField);
-                if (req.file) await fs.remove(req.file.path);
+                await Project.collection.updateOne(
+                    { _id: new mongoose.Types.ObjectId(projectId) },
+                    { $set: failField }
+                );
             }
         }, 3000);
 
