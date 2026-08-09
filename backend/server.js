@@ -126,7 +126,22 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
         const user = await User.findById(req.user.id);
         const subdomain = `${user.email.split('@')[0].replace(/[^a-z0-9]/g, '')}-${name.toLowerCase().replace(/[^a-z0-9-]/g, '')}`;
 
-        const project = new Project({ projectName: name, subdomain, createdBy: req.user.id, status: 'ready' });
+        // Fixed: Automatically resolve and supply all schema-required fields to bypass Database Validation Errors
+        const appName = name;
+        const platform = 'android';
+        const websiteUrl = `${req.protocol}://${req.get('host')}/${subdomain}`;
+        const packageName = `com.webhost.${subdomain.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+
+        const project = new Project({ 
+            projectName: name, 
+            subdomain, 
+            createdBy: req.user.id, 
+            status: 'ready',
+            appName,
+            platform,
+            packageName,
+            websiteUrl
+        });
         await project.save();
         res.status(201).json(project);
     } catch (err) { res.status(500).json({ message: err.message }); }
@@ -252,8 +267,10 @@ app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, re
         
         const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
         const projectDeployPath = path.join(DEPLOYMENTS_DIR, project._id.toString());
+        
+        // Fixed: Force fully delete and recreate deployments folder to ensure absolute clean deployments
+        await fs.remove(projectDeployPath);
         await fs.ensureDir(projectDeployPath);
-        await fs.emptyDir(projectDeployPath);
         
         if (gitURL) {
             const tempCloneDir = path.join(UPLOADS_DIR, `_temp_git_${project._id}`);
@@ -281,7 +298,11 @@ app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, re
             await fs.remove(req.file.path);
         }
         
-        await project.updateOne({ status: 'ready', rootDir: rootDir || '' });
+        // Reset compiled PWA/VBS configuration state on fresh deploy so user is prompted to compile again
+        await Project.collection.updateOne(
+            { _id: new mongoose.Types.ObjectId(projectId) },
+            { $set: { appWindowsStatus: 'none', appAndroidStatus: 'none', status: 'ready', rootDir: rootDir || '' } }
+        );
     } catch (error) {
         if (project) await project.updateOne({ status: 'failed' });
     }
