@@ -16,10 +16,9 @@ const mongoose = require('mongoose');
 const cuid = require('cuid');
 const unzipper = require('unzipper');
 const simpleGit = require('simple-git');
-const archiver = require('archiver'); // Added missing archiver import
+const archiver = require('archiver');
 
 // --- CRITICAL UNCAUGHT EXCEPTION SAFETY HANDLERS ---
-// Prevents any runtime compilation, connection, or database errors from crashing the Node container process on Back4app.
 process.on('uncaughtException', (err) => {
     console.error('🔥 CRITICAL UNCAUGHT EXCEPTION ENCOUNTERED:');
     console.error(err.message);
@@ -34,6 +33,7 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 
 // --- CRITICAL SAFE-BOOT INITIALIZATION CHECK ---
+// Strictly bound to port 8080 as the fallback port
 const PORT = process.env.PORT || 8080;
 
 if (!process.env.MONGO_URI) {
@@ -234,7 +234,7 @@ async function extractZipSafely(zipPath, targetDir) {
         // Prevention: Malicious executable files extension blocker
         const ext = path.extname(file.path).toLowerCase();
         if (FORBIDDEN_EXTENSIONS.includes(ext)) {
-            throw new Error(`Security Violation: Unauthorized file type '${ext}' found inside archive.`);
+            throw new Error("Security Violation: Unauthorized file type '" + ext + "' found inside archive.");
         }
     }
 
@@ -724,7 +724,6 @@ app.post('/api/builds/trigger', authenticateToken, async (req, res) => {
         const project = await Project.findOne({ _id: projectId, createdBy: req.user.id });
         if (!project) return res.status(404).json({ message: "Project not found." });
 
-        // Forwarding Express request protocol and host context cleanly to the queue
         const build = await BuildEngine.enqueueBuild(projectId, platform, req.protocol, req.get('host'));
         res.status(202).json({ message: "App compilation pipeline queued.", buildId: build._id });
     } catch (err) {
@@ -956,4 +955,5 @@ app.get('*', (req, res) => {
 });
 
 // --- SERVER INITIALIZATION ---
+// Port strictly bound to 8080 as fallback port
 app.listen(PORT, () => console.log("🚀 WebHost Core Engine operational on port " + PORT));
