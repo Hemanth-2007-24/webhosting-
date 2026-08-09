@@ -164,4 +164,318 @@ app.post('/api/user/pat', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ message: 'Error saving PAT.' }); }
 });
 
-app.get('/api/user/repos', authenticateToken, async
+app.get('/api/user/repos', authenticateToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+        if (!user || !user.githubPat) return res.status(400).json({ message: 'PAT not configured.' });
+        
+        const response = await fetch('https://api.github.com/user/repos?per_page=100&sort=updated', {
+            headers: { 'Authorization': `token ${user.githubPat}`, 'User-Agent': 'WebHost' }
+        });
+        if (!response.ok) return res.status(response.status).json({ message: `API error` });
+        
+        const repos = await response.json();
+        res.json(repos.map(r => ({ name: r.full_name, clone_url: r.clone_url, private: r.private })));
+    } catch (err) { res.status(500).json({ message: 'Error fetching repos.' }); }
+});
+
+// =================================================================
+// ==           STATIC WEBSITE DEPLOYMENT PIPELINE ROUTE          ==
+// =================================================================
+
+async function extractZipSafely(zipPath, targetDir) {
+    const zip = await unzipper.Open.file(zipPath);
+    for (const file of zip.files) {
+        if (file.type === 'Directory') continue;
+        const resolvedPath = path.resolve(targetDir, file.path);
+        if (!resolvedPath.startsWith(targetDir)) throw new Error(`Path Traversal detected.`);
+        await fs.ensureDir(path.dirname(resolvedPath));
+        await new Promise((resolve, reject) => file.stream().pipe(fs.createWriteStream(resolvedPath)).on('finish', resolve).on('error', reject));
+    }
+}
+
+app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, res) => {
+    const { projectId, gitURL, rootDir } = req.body;
+    let project;
+    try {
+        project = await Project.findById(projectId);
+        if (!project || project.createdBy.toString() !== req.user.id) return res.status(404).json({ message: 'Project not found' });
+        
+        await project.updateOne({ status: 'deploying' });
+        res.status(202).json({ message: 'Deploying' });
+        
+        const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
+        const projectDeployPath = path.join(DEPLOYMENTS_DIR, project._id.toString());
+        await fs.ensureDir(projectDeployPath);
+        await fs.emptyDir(projectDeployPath);
+        
+        if (gitURL) {
+            const tempCloneDir = path.join(UPLOADS_DIR, `_temp_git_${project._id}`);
+            const user = await User.findById(req.user.id);
+            let cloneURL = gitURL;
+            if (user && user.githubPat && gitURL.includes('github.com')) {
+                cloneURL = gitURL.startsWith('https://') ? gitURL.replace('https://', `https://${user.githubPat}@`) : `https://${user.githubPat}@github.com/${gitURL}`;
+            }
+            await simpleGit().clone(cloneURL, tempCloneDir, { '--depth': 1 });
+            
+            let startPath = tempCloneDir;
+            if (rootDir) startPath = path.resolve(tempCloneDir, rootDir.trim());
+            const sourceDir = await findIndexHtmlDir(startPath);
+            await fs.copy(sourceDir, projectDeployPath);
+            await fs.remove(tempCloneDir);
+        } else if (req.file) {
+            const tempExtractDir = path.join(UPLOADS_DIR, `_temp_zip_${project._id}`);
+            await extractZipSafely(req.file.path, tempExtractDir);
+            
+            let startPath = tempExtractDir;
+            if (rootDir) startPath = path.resolve(tempExtractDir, rootDir.trim());
+            const sourceDir = await findIndexHtmlDir(startPath);
+            await fs.copy(sourceDir, projectDeployPath);
+            await fs.remove(tempExtractDir);
+            await fs.remove(req.file.path);
+        }
+        
+        await project.updateOne({ status: 'ready', rootDir: rootDir || '' });
+    } catch (error) {
+        if (project) await project.updateOne({ status: 'failed' });
+    }
+});
+
+// =================================================================
+// ==   PWA INJECTION (ANDROID/WINDOWS) & WINDOWS VBS COMPILER    ==
+// =================================================================
+
+app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon'), async (req, res) => {
+    const { platform, appName } = req.body;
+    const projectId = req.params.id;
+    const cleanAppName = (appName || 'PWA App').trim();
+
+    try {
+        const project = await Project.findById(projectId);
+        if (!project || project.createdBy.toString() !== req.user.id) return res.status(404).json({ message: 'Unauthorized' });
+
+        const updateField = platform === 'android' ? { appAndroidStatus: 'building', appName: cleanAppName } : { appWindowsStatus: 'building', appName: cleanAppName };
+        await Project.findByIdAndUpdate(projectId, updateField);
+
+        res.status(202).json({ message: 'Compilation sequence active.' });
+
+        setTimeout(async () => {
+            const finalPackagePath = path.join(APPS_DIR, `${project.subdomain}_${platform}`);
+            
+            try {
+                const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
+                const deployDir = path.join(__dirname, 'deployments', projectId.toString());
+                
+                let iconRelativePath = "https://cdn-icons-png.flaticon.com/512/5266/5266152.png";
+                if (req.file) {
+                    const ext = path.extname(req.file.originalname).toLowerCase() || '.png';
+                    const iconName = `app-icon-${Date.now()}${ext}`;
+                    const targetIconPath = path.join(deployDir, iconName);
+                    
+                    await fs.copy(req.file.path, targetIconPath);
+                    iconRelativePath = `./${iconName}`; 
+                    
+                    await Project.findByIdAndUpdate(projectId, { iconUrl: iconRelativePath });
+                    await fs.remove(req.file.path);
+                } else if (project.iconUrl) {
+                    iconRelativePath = project.iconUrl;
+                }
+                
+                if (await fs.pathExists(deployDir)) {
+                    const manifest = {
+                        "name": cleanAppName,
+                        "short_name": cleanAppName.substring(0, 15),
+                        "start_url": "./",
+                        "display": "standalone",
+                        "background_color": "#ffffff",
+                        "theme_color": "#2196F3",
+                        "icons": [
+                            { "src": iconRelativePath, "sizes": "192x192", "type": "image/png" },
+                            { "src": iconRelativePath, "sizes": "512x512", "type": "image/png" }
+                        ]
+                    };
+                    await fs.writeJson(path.join(deployDir, 'manifest.json'), manifest, { spaces: 2 });
+                    
+                    const swCode = `
+self.addEventListener('install', e => { e.waitUntil(caches.open('pwa-cache-${projectId}').then(c => c.addAll(['./', './index.html', './manifest.json']))); });
+self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then(res => res || fetch(e.request))); });
+                    `;
+                    await fs.writeFile(path.join(deployDir, 'sw.js'), swCode.trim());
+                    
+                    const indexPath = path.join(deployDir, 'index.html');
+                    if (await fs.pathExists(indexPath)) {
+                        let html = await fs.readFile(indexPath, 'utf8');
+                        if (!html.includes('manifest.json')) {
+                            const injection = `
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('Service Worker Registered'));
+    }
+  </script>
+  <link rel="manifest" href="manifest.json">
+</head>`;
+                            html = html.replace(/<\/head>/i, injection);
+                            await fs.writeFile(indexPath, html);
+                        }
+                    }
+                }
+
+                if (platform === 'windows') {
+                    const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
+                    await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
+                    await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
+                } else if (platform === 'android') {
+                    await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
+                }
+                
+            } catch (err) {
+                const failField = platform === 'android' ? { appAndroidStatus: 'failed' } : { appWindowsStatus: 'failed' };
+                await Project.findByIdAndUpdate(projectId, failField);
+                if (req.file) await fs.remove(req.file.path);
+            }
+        }, 3000);
+
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// =================================================================
+// ==                DIRECT WEB-TO-APP COMPILER                   ==
+// =================================================================
+
+app.post('/api/build-app-direct', authenticateToken, upload.single('icon'), async (req, res) => {
+    try {
+        const { url, platform } = req.body;
+        const buildId = cuid();
+        
+        setTimeout(async () => {
+            const finalPackagePath = path.join(APPS_DIR, `direct_${buildId}`);
+            if (platform === 'windows') {
+                const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${url} --window-size=1280,800", 0, false\n`;
+                await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
+            }
+        }, 1500);
+
+        const downloadUrl = `/api/downloads/direct_${buildId}/${platform}`;
+        res.json({ message: "Compiling...", downloadUrl });
+    } catch(err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// =================================================================
+// ==                     DOWNLOAD ROUTES                         ==
+// =================================================================
+
+app.get('/api/projects/:id/download-source', authenticateToken, async (req, res) => {
+    try {
+        const project = await Project.findById(req.params.id);
+        if (!project || project.createdBy.toString() !== req.user.id) return res.status(404).send("Unauthorized");
+        
+        const deployDir = path.join(__dirname, 'deployments', project._id.toString());
+        if (!(await fs.pathExists(deployDir))) return res.status(404).send("No deployed files found.");
+
+        let archiver;
+        try {
+            archiver = require('archiver');
+        } catch (e) {
+            return res.status(501).send("Please install 'archiver' (npm i archiver) on server to enable source file downloads.");
+        }
+
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename=${(project.projectName || 'Project').replace(/\s+/g, '_')}_Backup.zip`);
+
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        archive.on('error', (err) => { throw err; });
+        archive.pipe(res);
+        archive.directory(deployDir, false);
+        archive.finalize();
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
+app.get('/api/projects/:id/download-app/windows', authenticateToken, async (req, res) => {
+    try {
+        const project = await Project.findById(req.params.id);
+        if (!project || project.createdBy.toString() !== req.user.id) return res.status(404).send("Unauthorized");
+        
+        const filePath = path.join(APPS_DIR, `${project.subdomain}_windows.vbs`);
+        if (!(await fs.pathExists(filePath))) return res.status(404).send("Application package not found or still compiling.");
+        
+        res.download(filePath, `${(project.appName || 'App').replace(/\s+/g, '_')}_Launcher.vbs`);
+    } catch (err) { res.status(500).send(err.message); }
+});
+
+app.get('/api/downloads/:id/windows', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const filePath = path.join(APPS_DIR, `${id}.vbs`);
+        if (!(await fs.pathExists(filePath))) return res.status(404).send("File not ready.");
+        res.download(filePath, `PWA_Launcher.vbs`);
+    } catch (err) { res.status(500).send(err.message); }
+});
+
+// =================================================================
+// ==                 ADMIN MANAGEMENT ENDPOINTS                  ==
+// =================================================================
+
+app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const totalUsers = await User.countDocuments();
+        const totalProjects = await Project.countDocuments();
+        const readyProjects = await Project.countDocuments({ status: 'ready' });
+        res.json({ totalUsers, totalProjects, activeDeployments: readyProjects });
+    } catch (err) { res.status(500).json({ message: "Server error compiling platform statistics." }); }
+});
+
+app.get('/api/admin/projects', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const projects = await Project.find().populate('createdBy', 'email').sort({ createdAt: -1 });
+        res.json(projects);
+    } catch (err) { res.status(500).json({ message: "Server error retrieving system projects." }); }
+});
+
+app.delete('/api/admin/projects/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const project = await Project.findById(req.params.id);
+        if (!project) return res.status(404).json({ message: "Project not found." });
+
+        const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
+        const projectPath = path.join(DEPLOYMENTS_DIR, project._id.toString());
+        
+        await fs.remove(projectPath);
+        await Project.findByIdAndDelete(req.params.id);
+        res.json({ message: "Project administratively deleted successfully." });
+    } catch (err) { res.status(500).json({ message: "Server error deleting project." }); }
+});
+
+// =================================================================
+// ==      PATH-BASED DEPLOYMENT ROUTING & FRONTEND SERVING       ==
+// =================================================================
+
+app.use(async (req, res, next) => {
+    if (req.path.startsWith('/api/')) return next();
+    const projectIdentifier = req.path.split('/')[1];
+    if (!projectIdentifier) return next();
+    
+    try {
+        const project = await Project.findOne({ subdomain: projectIdentifier, status: 'ready' });
+        if (project) {
+            const projectPath = path.join(__dirname, 'deployments', project._id.toString());
+            req.url = req.url.replace(`/${projectIdentifier}`, '') || '/';
+            return express.static(projectPath)(req, res, () => res.sendFile(path.join(projectPath, 'index.html')));
+        }
+        return next();
+    } catch (error) { return res.status(500).send('Server error.'); }
+});
+
+app.use(express.static(__dirname));
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) return res.status(404).json({ message: "API not found." });
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.listen(PORT, () => console.log("🚀 WebHost Core Engine operational on port " + PORT));
