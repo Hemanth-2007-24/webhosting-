@@ -252,19 +252,17 @@ document.addEventListener('DOMContentLoaded', () => {
             } else { 
                 projects.forEach(project => { 
                     const card = document.createElement('div'); 
-                    card.className = 'glass-card p-6 rounded-[24px] hover:border-white/[0.15] hover:translate-y-[-2px] transition-all flex flex-col justify-between gap-4'; 
+                    card.className = 'glass-card p-6 rounded-[24px] hover:border-white/[0.15] hover:translate-y-[-2px] transition-all flex flex-col justify-between h-full gap-4'; 
                     const cleanSubdomain = project.subdomain;
                     const fullProjectUrl = `${window.location.origin}/${cleanSubdomain}`;
 
+                    // App Downloads HTML rendering below action buttons
                     let appDownloadsHTML = '';
                     if (project.appAndroidStatus === 'ready' || project.appWindowsStatus === 'ready') {
                         appDownloadsHTML = `
-                            <div class="mt-2 pt-2 border-t border-white/[0.05] space-y-1.5">
-                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Compiled Packages</span>
-                                <div class="flex flex-wrap gap-1.5">
-                                    ${project.appAndroidStatus === 'ready' ? `<button class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-bold transition-all qr-btn" data-url="${fullProjectUrl}"><i class="fa-brands fa-android"></i> Android PWA (QR)</button>` : ''}
-                                    ${project.appWindowsStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/windows" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> Windows .VBS</a>` : ''}
-                                </div>
+                            <div class="flex flex-col gap-2 pt-2">
+                                ${project.appWindowsStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/windows?token=${token}" class="w-full py-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 rounded-xl text-xs font-bold transition-all flex justify-center items-center gap-2"><i class="fa-brands fa-windows"></i> Download Windows PWA</a>` : ''}
+                                ${project.appAndroidStatus === 'ready' ? `<button class="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-bold transition-all qr-btn flex justify-center items-center gap-2" data-url="${fullProjectUrl}"><i class="fa-brands fa-android"></i> Install Android PWA (QR)</button>` : ''}
                             </div>
                         `;
                     }
@@ -284,12 +282,18 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                             <a href="/${cleanSubdomain}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold tracking-wide flex items-center gap-1">/${cleanSubdomain} <i class="fa-solid fa-external-link text-[10px]"></i></a>
                             ${project.rootDir ? `<div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Path: <span class="text-slate-300 font-mono">${project.rootDir}</span></div>` : ''}
-                            ${appDownloadsHTML}
                         </div>
-                        <div class="flex flex-wrap gap-2 pt-2 border-t border-white/[0.05]">
-                            <button class="flex-1 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-xl text-xs font-semibold transition-all deploy-btn" data-id="${project._id}" data-name="${projectTitle}" data-root-dir="${project.rootDir || ''}">Deploy</button>
-                            <button class="flex-1 py-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-xl text-xs font-semibold transition-all app-studio-btn" data-id="${project._id}" data-name="${projectTitle}">App Studio</button>
-                            <button class="px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl text-xs transition-all delete-btn" data-id="${project._id}" data-name="${projectTitle}"><i class="fa-solid fa-trash"></i></button>
+                        
+                        <div class="mt-auto flex flex-col pt-4 gap-2">
+                            <!-- Core Action Buttons -->
+                            <div class="flex flex-wrap gap-2 pt-3 border-t border-white/[0.05]">
+                                <button class="flex-1 py-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/20 rounded-xl text-xs font-semibold transition-all deploy-btn" data-id="${project._id}" data-name="${projectTitle}" data-root-dir="${project.rootDir || ''}">Deploy</button>
+                                <button class="flex-1 py-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-xl text-xs font-semibold transition-all app-studio-btn" data-id="${project._id}" data-name="${projectTitle}">App Studio</button>
+                                <a href="/api/projects/${project._id}/download-source?token=${token}" class="px-3 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 rounded-xl text-xs transition-all flex items-center justify-center" title="Download Deployed Source Backup"><i class="fa-solid fa-download"></i></a>
+                                <button class="px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl text-xs transition-all delete-btn" data-id="${project._id}" data-name="${projectTitle}"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                            <!-- Rendered App Downloads Below -->
+                            ${appDownloadsHTML}
                         </div>
                     `; 
                     projectsList.appendChild(card); 
@@ -355,7 +359,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const deployBtn = e.target.closest('.deploy-btn'); 
         const deleteBtn = e.target.closest('.delete-btn'); 
         const appStudioBtn = e.target.closest('.app-studio-btn');
-        const qrBtn = e.target.closest('.qr-btn'); // Android QR Trigger
+        const qrBtn = e.target.closest('.qr-btn');
 
         if (deployBtn) { 
             document.getElementById('deploy-project-name').textContent = deployBtn.dataset.name; 

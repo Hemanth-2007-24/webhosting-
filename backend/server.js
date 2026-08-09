@@ -53,8 +53,9 @@ fs.ensureDirSync(UPLOADS_DIR);
 fs.ensureDirSync(APPS_DIR);
 const upload = multer({ dest: UPLOADS_DIR });
 
+// Modified to accept JWT Token via query string for safe file downloads via <a> tags
 const authenticateToken = (req, res, next) => {
-    const token = req.headers['authorization']?.split(' ')[1];
+    const token = req.headers['authorization']?.split(' ')[1] || req.query.token;
     if (!token) return res.status(401).json({ message: "Access Token missing." });
     jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret_key', (err, user) => {
         if (err) return res.status(403).json({ message: "Invalid session." });
@@ -110,7 +111,6 @@ app.post('/api/auth/login', async (req, res) => {
         const user = await User.findOne({ email });
         if (!user || !(await bcrypt.compare(password, user.password))) return res.status(400).json({ message: "Invalid credentials." });
         
-        // Auto-promote Admin check
         if (email.toLowerCase() === (process.env.ADMIN_EMAIL || '').toLowerCase() && user.role !== 'admin') {
             user.role = 'admin';
             await user.save();
@@ -270,8 +270,8 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
                 const userIcon = project.iconUrl || fallbackIcon;
                 
                 // 1. DYNAMIC PROGRESSIVE WEB APP (PWA) MANIFEST INJECTION
-                // Configures the live deployment to function natively as a PWA
-                // Uses explicit snippet provided by user, adjusting `start_url` to "./" for sub-directory proxy compatibility
+                // Applies the EXACT requested snippet configuration.
+                // NOTE: 'start_url' uses "./" instead of "/" to ensure correct sub-directory scoping when proxied
                 if (await fs.pathExists(deployDir)) {
                     console.log(`[${project.projectName}] Injecting PWA Manifest and Service Worker...`);
                     const manifest = {
@@ -289,7 +289,7 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
                     await fs.writeJson(path.join(deployDir, 'manifest.json'), manifest, { spaces: 2 });
                     
                     const swCode = `
-self.addEventListener('install', e => { e.waitUntil(caches.open('pwa-cache').then(c => c.addAll(['./', './index.html', './manifest.json']))); });
+self.addEventListener('install', e => { e.waitUntil(caches.open('pwa-cache-${projectId}').then(c => c.addAll(['./', './index.html', './manifest.json']))); });
 self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then(res => res || fetch(e.request))); });
                     `;
                     await fs.writeFile(path.join(deployDir, 'sw.js'), swCode.trim());
@@ -316,12 +316,11 @@ self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then
 
                 // 2. NATIVE DESKTOP LAUNCHER 
                 if (platform === 'windows') {
-                    // Windows PWA Desktop Wrapper (.VBS) executing MS Edge native PWA mode
                     const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
                     await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
                     await Project.findByIdAndUpdate(projectId, { appWindowsStatus: 'ready' });
                 } else if (platform === 'android') {
-                    // Android PWA configuration completes successfully
+                    // Android PWA configuration completes successfully natively
                     await Project.findByIdAndUpdate(projectId, { appAndroidStatus: 'ready' });
                 }
                 
@@ -366,18 +365,49 @@ app.post('/api/build-app-direct', authenticateToken, upload.single('icon'), asyn
 // ==                     DOWNLOAD ROUTES                         ==
 // =================================================================
 
-app.get('/api/projects/:id/download-app/windows', async (req, res) => {
+// 1. Download Deployed Container Zip Source
+app.get('/api/projects/:id/download-source', authenticateToken, async (req, res) => {
     try {
         const project = await Project.findById(req.params.id);
-        if (!project) return res.status(404).send("Project not found.");
+        if (!project || project.createdBy.toString() !== req.user.id) return res.status(404).send("Unauthorized");
+        
+        const deployDir = path.join(__dirname, 'deployments', project._id.toString());
+        if (!(await fs.pathExists(deployDir))) return res.status(404).send("No deployed files found.");
+
+        let archiver;
+        try {
+            archiver = require('archiver');
+        } catch (e) {
+            return res.status(501).send("Please install the 'archiver' package on the server (npm i archiver) to enable source file downloads.");
+        }
+
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename=${(project.projectName || 'Project').replace(/\s+/g, '_')}_Backup.zip`);
+
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        archive.on('error', (err) => { throw err; });
+        archive.pipe(res);
+        archive.directory(deployDir, false);
+        archive.finalize();
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
+// 2. Download Windows Compiled .VBS
+app.get('/api/projects/:id/download-app/windows', authenticateToken, async (req, res) => {
+    try {
+        const project = await Project.findById(req.params.id);
+        if (!project || project.createdBy.toString() !== req.user.id) return res.status(404).send("Unauthorized");
         
         const filePath = path.join(APPS_DIR, `${project.subdomain}_windows.vbs`);
-        
         if (!(await fs.pathExists(filePath))) return res.status(404).send("Application package not found or still compiling.");
+        
         res.download(filePath, `${(project.appName || 'App').replace(/\s+/g, '_')}_Launcher.vbs`);
     } catch (err) { res.status(500).send(err.message); }
 });
 
+// 3. Download Direct App
 app.get('/api/downloads/:id/windows', async (req, res) => {
     try {
         const { id } = req.params;
