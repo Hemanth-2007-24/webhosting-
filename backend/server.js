@@ -724,7 +724,8 @@ app.post('/api/builds/trigger', authenticateToken, async (req, res) => {
         const project = await Project.findOne({ _id: projectId, createdBy: req.user.id });
         if (!project) return res.status(404).json({ message: "Project not found." });
 
-        const build = await BuildEngine.enqueueBuild(projectId, platform);
+        // Forwarding Express request protocol and host context cleanly to the queue
+        const build = await BuildEngine.enqueueBuild(projectId, platform, req.protocol, req.get('host'));
         res.status(202).json({ message: "App compilation pipeline queued.", buildId: build._id });
     } catch (err) {
         res.status(500).json({ message: err.message });
