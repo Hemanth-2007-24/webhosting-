@@ -19,8 +19,8 @@ class MemoryBuildQueue {
         this.isProcessing = false;
     }
 
-    enqueue(buildId, projectId, platform) {
-        this.queue.push({ buildId, projectId, platform });
+    enqueue(buildId, projectId, platform, protocol, host) {
+        this.queue.push({ buildId, projectId, platform, protocol, host });
         this.processNext();
     }
 
@@ -42,7 +42,7 @@ class MemoryBuildQueue {
     }
 
     async executeBuild(job) {
-        const { buildId, projectId, platform } = job;
+        const { buildId, projectId, platform, protocol, host } = job;
         const workspaceDir = path.join(__dirname, `workspace_build_${buildId}`);
         const finalPackagePath = path.join(APPS_DIR, `release_${buildId}`);
         let logAccumulator = `[SYSTEM] Starting local memory-queued compilation for build: ${buildId}\n`;
@@ -55,7 +55,7 @@ class MemoryBuildQueue {
             if (!project) throw new Error("Project instance not found.");
 
             // Absolute destination routing target
-            const targetProjectUrl = `${req.protocol}://${req.get('host')}/${project.subdomain}`;
+            const targetProjectUrl = `${protocol}://${host}/${project.subdomain}`;
 
             if (platform === 'windows') {
                 logAccumulator += `[WINDOWS] Compiling silent VBScript desktop launcher...\n`;
@@ -117,7 +117,7 @@ class MemoryBuildQueue {
 const localBuildQueue = new MemoryBuildQueue();
 
 class BuildEngine {
-    static async enqueueBuild(projectId, platform) {
+    static async enqueueBuild(projectId, platform, protocol, host) {
         const startTime = new Date();
         const build = new Build({
             projectId,
@@ -127,8 +127,8 @@ class BuildEngine {
         });
         await build.save();
         
-        // Push directly to the local memory compiler queue
-        localBuildQueue.enqueue(build._id, projectId, platform);
+        // Push directly to the local memory compiler queue with protocol and host context
+        localBuildQueue.enqueue(build._id, projectId, platform, protocol, host);
         
         await Project.findByIdAndUpdate(projectId, { buildStatus: 'building' });
         await LoggerService.log('BUILD_QUEUED', `Build ID: ${build._id} for Platform: ${platform} (Memory Queue)`, null, projectId);
