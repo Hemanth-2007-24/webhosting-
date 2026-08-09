@@ -3,6 +3,10 @@
 // =================================================================
 
 require('dotenv').config();
+const dns = require('dns');
+// CRITICAL: Forces Node.js 18+ to prioritize IPv4 DNS resolutions to prevent 30-second Mongo Atlas connection timeouts
+dns.setDefaultResultOrder('ipv4first');
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
