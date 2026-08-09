@@ -33,7 +33,6 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 
 // --- CRITICAL SAFE-BOOT INITIALIZATION CHECK ---
-// Strictly bound to port 8080 as the fallback port
 const PORT = process.env.PORT || 8080;
 
 if (!process.env.MONGO_URI) {
@@ -44,11 +43,10 @@ if (!process.env.MONGO_URI) {
         res.status(500).send(`
             <h1>WebHost is in Safe Mode</h1>
             <p><strong>Config Error:</strong> MONGO_URI is missing from your environment variables.</p>
-            <p>Please configure MONGO_URI inside your Back4App dashboard variables settings.</p>
         `);
     });
     
-    app.listen(PORT, () => console.log(`🚀 Safe Mode server successfully listening on port ${PORT}`));
+    app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Safe Mode server successfully listening on port ${PORT}`));
     return; 
 }
 
@@ -955,5 +953,5 @@ app.get('*', (req, res) => {
 });
 
 // --- SERVER INITIALIZATION ---
-// Port strictly bound to 8080 as fallback port
-app.listen(PORT, () => console.log("🚀 WebHost Core Engine operational on port " + PORT));
+// Explicitly binding to host 0.0.0.0 as required by Railway documentation to prevent port check failures
+app.listen(PORT, "0.0.0.0", () => console.log("🚀 WebHost Core Engine operational on port " + PORT));
