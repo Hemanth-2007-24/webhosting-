@@ -50,11 +50,6 @@
             transform: scale(1);
             opacity: 1;
         }
-        @keyframes pulseStatus {
-            0% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.3); }
-            70% { box-shadow: 0 0 0 6px rgba(234, 179, 8, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
-        }
     </style>
 </head>
 <body class="font-sans bg-bg-dark text-white min-h-screen relative overflow-x-hidden selection:bg-indigo-500 selection:text-white">
@@ -75,7 +70,6 @@
             </a>
             <div class="hidden md:flex gap-1">
                 <button id="nav-dash" class="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/[0.02]">Dashboard</button>
-                <button id="nav-proj" class="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/[0.02]">Projects</button>
             </div>
         </div>
         <div class="flex items-center gap-3">
@@ -97,46 +91,40 @@
             </div>
         </div>
 
-        <!-- Standalone Instant Web-to-App Direct Compiler Panel (HIDDEN) -->
-        <div id="direct-compiler-panel" class="glass-card p-6 sm:p-8 rounded-[28px] max-w-3xl mx-auto space-y-6 hidden">
+        <!-- Standalone Instant Web-to-App Direct Compiler Panel -->
+        <div id="direct-compiler-panel" class="glass-card p-6 sm:p-8 rounded-[28px] max-w-3xl mx-auto space-y-6">
             <div class="flex items-center gap-3">
                 <div class="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
                     <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
                 </div>
                 <div>
                     <h3 class="font-display font-extrabold text-xl text-white">Instant Web-to-App Studio</h3>
-                    <p class="text-xs text-slate-400">Convert any live website or web app directly into compiled Android APK and Windows VBS containers.</p>
+                    <p class="text-xs text-slate-400">Convert any live website into an installable Web App and standalone Windows PWA launcher (.VBS).</p>
                 </div>
             </div>
             
             <form id="direct-compile-form" class="grid sm:grid-cols-2 gap-4">
                 <div class="sm:col-span-2">
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Website URL</label>
-                    <input type="url" id="direct-url" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="https://example.com">
+                    <input type="url" id="direct-url" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="https://example.com" required>
                 </div>
                 <div>
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Application Name</label>
-                    <input type="text" id="direct-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="My Native App">
+                    <input type="text" id="direct-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="My Native App" required>
                 </div>
                 <div>
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Target Platform</label>
                     <select id="direct-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500">
-                        <option value="android">Android Mobile (.APK)</option>
-                        <option value="windows">Windows Desktop (.VBS)</option>
+                        <option value="windows">Windows PWA Desktop (.VBS)</option>
                     </select>
                 </div>
                 <div class="sm:col-span-2 flex flex-col sm:flex-row items-end justify-between gap-4 pt-2">
-                    <div class="flex-1 w-full">
-                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">App Icon (Optional PNG/JPG)</label>
-                        <input type="file" id="direct-icon" class="w-full p-2.5 bg-black/45 border border-white/[0.08] rounded-xl text-xs" accept="image/png, image/jpeg">
-                    </div>
-                    <button type="submit" id="direct-compile-btn" class="w-full sm:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all shadow-lg uppercase text-xs tracking-wider shrink-0 h-11">Compile Application</button>
+                    <button type="submit" id="direct-compile-btn" class="w-full sm:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all shadow-lg uppercase text-xs tracking-wider shrink-0 h-11 ml-auto">Compile Application</button>
                 </div>
             </form>
             
-            <!-- Direct Build Progress Tracker & Download Links -->
             <div id="direct-build-status" class="hidden p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm">
-                <!-- Injected dynamically by compilation script -->
+                <!-- Injected dynamically -->
             </div>
         </div>
 
@@ -145,35 +133,10 @@
             <!-- Project Cards Injected Here -->
         </div>
 
-        <!-- Stateful Layout Row: Credentials Section & Native App Downloads -->
-        <div class="grid lg:grid-cols-12 gap-8 max-w-7xl mx-auto pt-6">
-            <!-- Dynamic GitHub Integration Card (8 columns wide on desktop) -->
-            <div id="pat-config-section" class="lg:col-span-7 space-y-4">
-                <!-- Rendered dynamically by script depending on whether token is stored -->
-            </div>
-
-            <!-- Native App Client Installer Card (5 columns wide on desktop) -->
-            <div class="lg:col-span-5">
-                <div class="glass-card p-6 rounded-[24px] space-y-4 h-full flex flex-col justify-between">
-                    <div class="flex items-center gap-3">
-                        <div class="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400">
-                            <i class="fa-solid fa-mobile-screen-button"></i>
-                        </div>
-                        <div>
-                            <h3 class="font-display font-bold text-base text-white">Native App Clients</h3>
-                            <p class="text-xs text-slate-500">Deploy and track progress natively from your system tray or mobile screen.</p>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-3 pt-2">
-                        <a href="/downloads/webhost.apk" class="flex items-center justify-center gap-2 p-3.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/35 text-emerald-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
-                            <i class="fa-brands fa-android text-base"></i> Android APK
-                        </a>
-                        <a href="/downloads/webhost-setup.exe" class="flex items-center justify-center gap-2 p-3.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 border-cyan-500/35 text-cyan-400 hover:text-white rounded-xl text-xs font-bold transition-all text-center">
-                            <i class="fa-brands fa-windows text-base"></i> Windows EXE
-                        </a>
-                    </div>
-                </div>
+        <!-- Credentials Section -->
+        <div class="max-w-7xl mx-auto pt-6">
+            <div id="pat-config-section" class="space-y-4">
+                <!-- Rendered dynamically -->
             </div>
         </div>
     </main>
@@ -189,7 +152,6 @@
                 <div>
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Project Name</label>
                   <input type="text" id="project-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500" placeholder="my-awesome-site" required>
-                  <p class="text-[10px] text-slate-500 mt-1">This defines the platform subdomain (e.g. /my-awesome-site-xyz)</p>
                 </div>
                 <div class="flex justify-end gap-2 pt-4">
                     <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
@@ -206,7 +168,6 @@
             
             <form id="deploy-form" class="space-y-4">
                 <input type="hidden" id="deploy-project-id">
-                
                 <div class="flex bg-white/[0.02] p-1.5 rounded-xl border border-white/[0.05] mb-4">
                     <button type="button" class="deploy-tab active flex-1 py-2 text-xs font-bold uppercase rounded-lg bg-indigo-500 text-white" data-tab="github">Git Pipeline</button>
                     <button type="button" class="deploy-tab flex-1 py-2 text-xs font-bold uppercase rounded-lg text-slate-400 hover:text-white" data-tab="upload">Direct ZIP</button>
@@ -220,7 +181,6 @@
                             <button type="button" id="toggle-manual-btn" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]">Or Link Manual</button>
                         </div>
                     </div>
-                    
                     <div id="manual-url-container" class="space-y-2">
                         <label class="text-xs font-bold text-slate-400 uppercase block">Repository HTTPS Clone URL</label>
                         <div class="flex gap-2">
@@ -235,11 +195,6 @@
                     <input type="file" id="zip-file" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-sm" accept=".zip">
                 </div>
 
-                <div class="space-y-2">
-                    <label class="text-xs font-bold text-slate-400 uppercase block">Root Directory Override (Optional)</label>
-                    <input type="text" id="root-dir" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" placeholder="e.g. dist, build, public">
-                </div>
-
                 <div class="flex justify-end gap-2 pt-4">
                     <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
                     <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs shadow-lg">Start Deploy Pipeline</button>
@@ -250,33 +205,27 @@
         <!-- APP STUDIO MODAL WITH IMAGE ICON FILE UPLOADER & CUSTOM CODE EDITOR -->
         <div id="app-studio-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
-            <h2 class="font-display font-extrabold text-2xl mb-2">Native App Studio</h2>
-            <p class="text-xs text-slate-500 mb-6">Compile your deployed website URL directly into native android apk and windows vbs packages.</p>
+            <h2 class="font-display font-extrabold text-2xl mb-2">PWA & Native Studio</h2>
+            <p class="text-xs text-slate-500 mb-6">Inject PWA features into your site and compile a standalone Windows launcher (.VBS).</p>
             <form id="app-studio-form" class="space-y-4">
                 <input type="hidden" id="app-project-id">
                 <div>
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Application Name</label>
-                  <input type="text" id="app-name-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500" placeholder="My Mobile App" required>
+                  <input type="text" id="app-name-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500" placeholder="My Desktop App" required>
                 </div>
                 <div>
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Target Platform</label>
                   <select id="app-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" required>
-                      <option value="android">Android Mobile Application (.APK)</option>
-                      <option value="windows">Windows Desktop Application (.VBS)</option>
+                      <option value="windows">Windows PWA Desktop (.VBS)</option>
                   </select>
                 </div>
                 <div>
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Application Icon (PNG/JPG)</label>
                   <input type="file" id="app-icon-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-sm" accept="image/png, image/jpeg">
                 </div>
-                <div>
-                  <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Custom Code Injection (Optional)</label>
-                  <textarea id="app-custom-code-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white font-mono text-xs focus:outline-none focus:border-indigo-500 h-24" placeholder="// Inject Kotlin logic, extra Javascript, CSS styles or Electron main/preload snippets..."></textarea>
-                  <p class="text-[10px] text-slate-500 mt-1">Allows custom security and WebView settings.</p>
-                </div>
                 <div class="flex justify-end gap-2 pt-4">
                     <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
-                    <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs shadow-lg">Compile Application</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs shadow-lg">Compile PWA App</button>
                 </div>
             </form>
         </div>
@@ -287,16 +236,13 @@
 document.addEventListener('DOMContentLoaded', () => {
     const API_BASE_URL = '';
     const token = localStorage.getItem('token');
-    const DOMAIN_NAME = window.location.origin;
     
     const projectsList = document.getElementById('projects-list');
     const backdrop = document.getElementById('modal-backdrop');
     const toast = document.getElementById('toast-notification');
     const patSection = document.getElementById('pat-config-section');
-    
     let hasSavedPat = false;
 
-    // Fixed fetch utility to safely capture non-JSON HTML error pages (e.g. 502/404) and prevent browser parser crashes
     const apiFetch = async (endpoint, options = {}) => { 
         const headers = {
             'Authorization': `Bearer ${token}`,
@@ -307,11 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
             headers['Content-Type'] = 'application/json';
             body = JSON.stringify(body);
         }
-        const res = await fetch(`${API_BASE_URL}/api${endpoint}`, { 
-            ...options, 
-            headers,
-            body
-        }); 
+        const res = await fetch(`${API_BASE_URL}/api${endpoint}`, { ...options, headers, body }); 
         if (res.status === 401) { 
             localStorage.removeItem('token'); 
             window.location.replace('/index.html'); 
@@ -319,67 +261,49 @@ document.addEventListener('DOMContentLoaded', () => {
         } 
         if (res.status === 204) return; 
 
-        // Intercept Content-Type header to handle raw HTML error pages cleanly
         const contentType = res.headers.get("content-type");
         if (contentType && contentType.indexOf("application/json") !== -1) {
             const data = await res.json(); 
             if (!res.ok) throw new Error(data.message); 
             return data; 
         } else {
-            const rawText = await res.text();
-            console.error("Non-JSON Response received from server:", rawText);
-            throw new Error(`Server returned non-JSON error. Status Code: ${res.status}`);
+            throw new Error(`Server returned error. Status: ${res.status}`);
         }
     };
 
     const fetchAndRenderProjects = async (isSilent = false) => { 
         try { 
-            // Injected dynamic loading indicator safely inside the target element before rendering only if NOT in silent background update mode
             if (!isSilent) {
-                projectsList.innerHTML = `
-                    <div id="dynamic-loader" class="text-center py-12 col-span-full animate-fadeIn">
-                        <i class="fa-solid fa-spinner animate-spin text-3xl text-indigo-400 mb-2"></i>
-                        <p class="text-slate-400 text-sm">Loading provisioned containers...</p>
-                    </div>
-                `; 
+                projectsList.innerHTML = `<div class="text-center py-12 col-span-full"><i class="fa-solid fa-spinner animate-spin text-3xl text-indigo-400 mb-2"></i><p class="text-slate-400 text-sm">Loading containers...</p></div>`; 
             }
             const projects = await apiFetch('/projects'); 
-            projectsList.innerHTML = ''; // Cleanly clear loading indicator
+            projectsList.innerHTML = ''; 
             if (!projects || projects.length === 0) { 
-                projectsList.innerHTML = `<p id="no-projects-text" class="text-center py-12 col-span-full text-slate-500 font-medium">No project containers initiated yet.</p>`; 
+                projectsList.innerHTML = `<p class="text-center py-12 col-span-full text-slate-500 font-medium">No project containers initiated yet.</p>`; 
             } else { 
                 projects.forEach(project => { 
                     const card = document.createElement('div'); 
-                    card.className = 'project-card-elem glass-card p-6 rounded-[24px] hover:border-white/[0.15] hover:translate-y-[-2px] transition-all flex flex-col justify-between gap-4'; 
-                    card.setAttribute('id', `project-card-${project._id}`); 
+                    card.className = 'glass-card p-6 rounded-[24px] hover:border-white/[0.15] hover:translate-y-[-2px] transition-all flex flex-col justify-between gap-4'; 
 
-                    // Render direct local app bundle download buttons if project has completed builds (updated download links with custom appName query parameter)
                     let appDownloadsHTML = '';
-                    if (project.appAndroidStatus === 'ready' || project.appWindowsStatus === 'ready') {
+                    if (project.appWindowsStatus === 'ready') {
                         appDownloadsHTML = `
                             <div class="mt-2 pt-2 border-t border-white/[0.05] space-y-1.5">
-                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Compiled Native Packages</span>
+                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Compiled PWA Packages</span>
                                 <div class="flex flex-wrap gap-1.5">
-                                    ${project.appAndroidStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/android" class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-android"></i> Android .APK</a>` : ''}
-                                    ${project.appWindowsStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/windows" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> Windows .VBS</a>` : ''}
+                                    <a href="/api/projects/${project._id}/download-app/windows" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> Windows PWA .VBS</a>
                                 </div>
                             </div>
                         `;
                     }
 
-                    // Dynamically map active building status inside the badge element
                     let badgeHTML = '';
-                    if (project.status === 'deploying' || project.status === 'queued') {
-                        badgeHTML = `<span class="status-badge ${project.status}"><i class="fa-solid fa-spinner animate-spin mr-1"></i> ${project.status}</span>`;
-                    } else if (project.appAndroidStatus === 'building' || project.appWindowsStatus === 'building') {
-                        badgeHTML = `<span class="status-badge queued"><i class="fa-solid fa-spinner animate-spin mr-1"></i> BUNDLING</span>`;
-                    } else {
-                        badgeHTML = `<span class="status-badge ${project.status || 'ready'}">${project.status || 'ready'}</span>`;
-                    }
+                    if (project.status === 'deploying' || project.status === 'queued') badgeHTML = `<span class="status-badge ${project.status}"><i class="fa-solid fa-spinner animate-spin mr-1"></i> ${project.status}</span>`;
+                    else if (project.appWindowsStatus === 'building') badgeHTML = `<span class="status-badge queued"><i class="fa-solid fa-spinner animate-spin mr-1"></i> BUNDLING</span>`;
+                    else badgeHTML = `<span class="status-badge ${project.status || 'ready'}">${project.status || 'ready'}</span>`;
 
-                    // Secure fallbacks to reconstruct title/subdomain if fields are empty on old/legacy DB records
-                    const projectTitle = project.projectName || project.name || (project.subdomain ? project.subdomain.split('-').slice(1).join('-') : 'test');
-                    const cleanSubdomain = project.subdomain || `${(projectTitle || 'app').toLowerCase().replace(/[^a-z0-9-]/g, '')}`;
+                    const projectTitle = project.projectName || 'App';
+                    const cleanSubdomain = project.subdomain;
 
                     card.innerHTML = `
                         <div class="space-y-3">
@@ -388,11 +312,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ${badgeHTML}
                             </div>
                             <a href="/${cleanSubdomain}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold tracking-wide flex items-center gap-1">/${cleanSubdomain} <i class="fa-solid fa-external-link text-[10px]"></i></a>
-                            ${project.rootDir ? `<div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Path: <span class="text-slate-300 font-mono">${project.rootDir}</span></div>` : ''}
                             ${appDownloadsHTML}
                         </div>
                         <div class="flex flex-wrap gap-2 pt-2 border-t border-white/[0.05]">
-                            <button class="flex-1 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-xl text-xs font-semibold transition-all deploy-btn" data-id="${project._id}" data-name="${projectTitle}" data-root-dir="${project.rootDir || ''}">Deploy</button>
+                            <button class="flex-1 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-xl text-xs font-semibold transition-all deploy-btn" data-id="${project._id}" data-name="${projectTitle}">Deploy</button>
                             <button class="flex-1 py-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-xl text-xs font-semibold transition-all app-studio-btn" data-id="${project._id}" data-name="${projectTitle}">App Studio</button>
                             <button class="px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl text-xs transition-all delete-btn" data-id="${project._id}" data-name="${projectTitle}"><i class="fa-solid fa-trash"></i></button>
                         </div>
@@ -402,7 +325,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } 
         } catch (error) { 
             showToast(error.message, 'error'); 
-            projectsList.innerHTML = `<p class="text-center py-12 col-span-full text-red-400 font-medium">Failed to retrieve containers.</p>`;
         } 
     };
 
@@ -411,146 +333,52 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await apiFetch('/user/pat');
             if (data && data.pat) {
                 hasSavedPat = true;
-                renderConnectedBadge();
-                document.getElementById('toggle-select-btn').classList.remove('hidden');
+                patSection.innerHTML = `<div class="glass-card p-6 rounded-[24px] flex justify-between items-center border border-emerald-500/10"><div class="flex items-center gap-3"><div class="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400"><i class="fa-brands fa-github text-xl"></i></div><div><h3 class="font-display font-bold text-base text-white">GitHub Connected</h3></div></div><button id="edit-pat-btn" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-xl text-xs font-bold">Update Token</button></div>`;
+                document.getElementById('edit-pat-btn').addEventListener('click', () => hasSavedPat = false || loadSavedPat());
             } else {
-                hasSavedPat = false;
-                renderPatInput();
-                document.getElementById('toggle-select-btn').classList.add('hidden');
+                patSection.innerHTML = `<div class="glass-card p-6 rounded-[24px] space-y-4"><div class="flex items-center gap-3"><div class="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400"><i class="fa-solid fa-key"></i></div><div><h3 class="font-display font-bold text-lg text-white">GitHub Token</h3></div></div><div class="flex gap-3"><input type="password" id="github-pat" class="flex-1 p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white font-mono text-sm" placeholder="ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"><button id="save-pat-btn" class="px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl text-xs">Save</button></div></div>`;
+                document.getElementById('save-pat-btn').addEventListener('click', async () => {
+                    await apiFetch('/user/pat', { method: 'POST', body: { pat: document.getElementById('github-pat').value } });
+                    showToast('Saved', 'success'); loadSavedPat();
+                });
             }
-        } catch (error) {
-            console.error(error);
-        }
-    };
-
-    const renderConnectedBadge = () => {
-        patSection.innerHTML = `
-            <div class="glass-card p-6 rounded-[24px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-emerald-500/10 h-full">
-                <div class="flex items-center gap-3">
-                    <div class="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                        <i class="fa-brands fa-github text-xl"></i>
-                    </div>
-                    <div>
-                        <h3 class="font-display font-bold text-base text-white flex items-center gap-2">
-                            GitHub Pipeline Connected 
-                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        </h3>
-                        <p class="text-xs text-slate-400">Your secure access token is configured. Private repository listings are operational.</p>
-                    </div>
-                </div>
-                <button id="edit-pat-btn" class="px-4 py-2 bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] rounded-xl text-xs font-bold transition-all shrink-0">Update Token</button>
-            </div>
-        `;
-        document.getElementById('edit-pat-btn').addEventListener('click', renderPatInput);
-    };
-
-    const renderPatInput = () => {
-        patSection.innerHTML = `
-            <div class="glass-card p-6 rounded-[24px] space-y-4">
-                <div class="flex items-center gap-3">
-                    <div class="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-                        <i class="fa-solid fa-key"></i>
-                    </div>
-                    <div>
-                        <h3 class="font-display font-bold text-lg text-white">Secure Git Repository Credentials</h3>
-                        <p class="text-xs text-slate-500">Provide an authentication token to sync and clone private project workspaces.</p>
-                    </div>
-                </div>
-                <div class="flex flex-col sm:flex-row gap-3">
-                    <input type="password" id="github-pat" class="flex-1 p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white font-mono text-sm focus:outline-none focus:border-indigo-500" placeholder="ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX">
-                    <button id="save-pat-btn" class="px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all uppercase text-xs tracking-wider">Save Token</button>
-                </div>
-            </div>
-        `;
-        document.getElementById('save-pat-btn').addEventListener('click', handleSavePatClick);
-    };
-
-    const handleSavePatClick = async () => {
-        const btn = document.getElementById('save-pat-btn');
-        const pat = document.getElementById('github-pat').value;
-        btn.disabled = true;
-        btn.innerHTML = 'Saving...';
-        try {
-            await apiFetch('/user/pat', {
-                method: 'POST',
-                body: { pat },
-            });
-            showToast('Credential secure status: Saved', 'success');
-            await loadSavedPat();
-            if (hasSavedPat) loadUserRepos();
-        } catch (error) {
-            showToast(error.message, 'error');
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = 'Save Token';
-        }
+        } catch (error) {}
     };
 
     const loadUserRepos = async () => {
         const repoSelect = document.getElementById('repo-select');
-        const repoContainer = document.getElementById('repo-select-container');
-        const manualContainer = document.getElementById('manual-url-container');
         try {
-            repoSelect.innerHTML = '<option value="">Searching repos...</option>';
-            repoContainer.classList.remove('hidden');
-            manualContainer.classList.add('hidden');
-
             const repos = await apiFetch('/user/repos');
             repoSelect.innerHTML = '<option value="">-- Choose Repository --</option>';
-            repos.forEach(repo => {
-                const opt = document.createElement('option');
-                opt.value = repo.clone_url;
-                opt.textContent = `${repo.name} ${repo.private ? '(Private)' : '(Public)'}`;
-                repoSelect.appendChild(opt);
-            });
-        } catch (err) {
-            repoContainer.classList.add('hidden');
-            manualContainer.classList.remove('hidden');
-        }
+            repos.forEach(repo => repoSelect.innerHTML += `<option value="${repo.clone_url}">${repo.name}</option>`);
+        } catch (err) {}
     };
 
     const showModal = (modal) => { 
-        backdrop.classList.remove('hidden'); 
-        backdrop.classList.add('flex');
+        backdrop.classList.remove('hidden'); backdrop.classList.add('flex');
         modal.classList.remove('hidden'); 
-        setTimeout(() => {
-            backdrop.classList.add('active', 'opacity-100');
-        }, 15);
+        setTimeout(() => backdrop.classList.add('active', 'opacity-100'), 15);
     }; 
     
     const hideModals = () => { 
         backdrop.classList.remove('active', 'opacity-100');
         document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
         setTimeout(() => {
-            backdrop.classList.add('hidden');
-            backdrop.classList.remove('flex');
+            backdrop.classList.add('hidden'); backdrop.classList.remove('flex');
             document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
         }, 300);
     };
 
     document.getElementById('new-project-btn').addEventListener('click', () => showModal(document.getElementById('new-project-modal'))); 
-    backdrop.addEventListener('click', (e) => { if (e.target.id === 'modal-backdrop' || e.target.closest('[data-close-modal]')) { hideModals(); } });
+    backdrop.addEventListener('click', (e) => { if (e.target.id === 'modal-backdrop' || e.target.closest('[data-close-modal]')) hideModals(); });
     
     document.getElementById('new-project-form').addEventListener('submit', async (e) => { 
         e.preventDefault(); 
-        const btn = e.target.querySelector('button[type="submit"]'); 
-        btn.disabled = true; 
-        btn.innerHTML = 'Provisioning...'; 
         try { 
-            await apiFetch('/projects', { 
-                method: 'POST', 
-                body: { projectName: document.getElementById('project-name').value }, 
-            }); 
-            showToast('Instance launched successfully!', 'success'); 
-            hideModals(); 
-            e.target.reset(); 
-            fetchAndRenderProjects(false); 
-        } catch (error) { 
-            showToast(error.message, 'error'); 
-        } finally { 
-            btn.disabled = false; 
-            btn.innerHTML = 'Launch Container'; 
-        } 
+            await apiFetch('/projects', { method: 'POST', body: { projectName: document.getElementById('project-name').value } }); 
+            showToast('Launched successfully!', 'success'); 
+            hideModals(); e.target.reset(); fetchAndRenderProjects(false); 
+        } catch (error) { showToast(error.message, 'error'); } 
     });
 
     projectsList.addEventListener('click', async (e) => { 
@@ -561,42 +389,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (deployBtn) { 
             document.getElementById('deploy-project-name').textContent = deployBtn.dataset.name; 
             document.getElementById('deploy-project-id').value = deployBtn.dataset.id; 
-            document.getElementById('root-dir').value = deployBtn.dataset.rootDir || '';
             showModal(document.getElementById('deploy-modal')); 
-            
-            if (hasSavedPat) {
-                loadUserRepos();
-            } else {
-                document.getElementById('repo-select-container').classList.add('hidden');
-                document.getElementById('manual-url-container').classList.remove('hidden');
-            }
+            if (hasSavedPat) { loadUserRepos(); document.getElementById('repo-select-container').classList.remove('hidden'); document.getElementById('manual-url-container').classList.add('hidden'); }
         } 
-
         if (appStudioBtn) {
             document.getElementById('app-project-id').value = appStudioBtn.dataset.id;
-            document.getElementById('app-name-input').value = appStudioBtn.dataset.name + " App";
-            
-            // Fetch and populate project's existing customCode if present
-            try {
-                const data = await apiFetch(`/project/${appStudioBtn.dataset.id}/custom-code`);
-                document.getElementById('app-custom-code-input').value = data.customCode || '';
-            } catch (err) {
-                console.error("Failed to pre-populate custom code:", err);
-            }
-            
+            document.getElementById('app-name-input').value = appStudioBtn.dataset.name;
             showModal(document.getElementById('app-studio-modal'));
         }
-
-        if (deleteBtn) { 
-            if (confirm(`Remove instance "${deleteBtn.dataset.name}"?`)) { 
-                try { 
-                    await apiFetch(`/projects/${deleteBtn.dataset.id}`, { method: 'DELETE' }); 
-                    showToast('Instance deleted successfully.', 'success'); 
-                    document.getElementById(`project-card-${deleteBtn.dataset.id}`).remove(); 
-                } catch (error) { 
-                    showToast(error.message, 'error'); 
-                } 
-            } 
+        if (deleteBtn && confirm(`Remove instance?`)) { 
+            try { 
+                await apiFetch(`/projects/${deleteBtn.dataset.id}`, { method: 'DELETE' }); 
+                showToast('Deleted', 'success'); fetchAndRenderProjects(true);
+            } catch (error) { showToast(error.message, 'error'); } 
         } 
     });
 
@@ -610,201 +415,93 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('toggle-manual-btn').addEventListener('click', () => {
-        document.getElementById('repo-select-container').classList.add('hidden');
-        document.getElementById('manual-url-container').classList.remove('hidden');
-        document.getElementById('repo-select').value = '';
+        document.getElementById('repo-select-container').classList.add('hidden'); document.getElementById('manual-url-container').classList.remove('hidden');
     });
-
     document.getElementById('toggle-select-btn').addEventListener('click', () => {
-        document.getElementById('git-url').value = '';
-        loadUserRepos();
+        document.getElementById('repo-select-container').classList.remove('hidden'); document.getElementById('manual-url-container').classList.add('hidden'); loadUserRepos();
     });
 
     document.getElementById('deploy-form').addEventListener('submit', async (e) => { 
         e.preventDefault(); 
-        const btn = e.target.querySelector('button[type="submit"]'); 
-        btn.disabled = true; 
-        btn.innerHTML = 'Deploying...'; 
         try { 
             const formData = new FormData(); 
             formData.append('projectId', document.getElementById('deploy-project-id').value); 
-            formData.append('rootDir', document.getElementById('root-dir').value);
-
-            const repoSelectVal = document.getElementById('repo-select').value;
-            const gitUrlVal = document.getElementById('git-url').value;
-            const file = document.getElementById('zip-file').files[0]; 
+            if (document.getElementById('repo-select').value) formData.append('gitURL', document.getElementById('repo-select').value); 
+            else if (document.getElementById('git-url').value) formData.append('gitURL', document.getElementById('git-url').value); 
+            else if (document.getElementById('zip-file').files[0]) formData.append('file', document.getElementById('zip-file').files[0]); 
             
-            if (repoSelectVal) { 
-                formData.append('gitURL', repoSelectVal); 
-            } else if (gitUrlVal) { 
-                formData.append('gitURL', gitUrlVal); 
-            } else if (file) { 
-                formData.append('file', file); 
-            } else { 
-                throw new Error('Provide source files to deploy.'); 
-            } 
-            
-            // Re-routed to use secure apiFetch wrapper instead of raw unauthenticated fetch
-            const res = await apiFetch('/deploy', { 
-                method: 'POST', 
-                body: formData, 
-            }); 
-            showToast('Pipeline build step active!', 'success'); 
-            hideModals(); 
-            e.target.reset(); 
-            setTimeout(fetchAndRenderProjects, 3000); 
-        } catch (error) { 
-            showToast(error.message, 'error'); 
-        } finally { 
-            btn.disabled = false; 
-            btn.innerHTML = 'Start Deploy Pipeline'; 
-        } 
+            await apiFetch('/deploy', { method: 'POST', body: formData }); 
+            showToast('Deployment started!', 'success'); 
+            hideModals(); e.target.reset(); setTimeout(fetchAndRenderProjects, 2000); 
+        } catch (error) { showToast(error.message, 'error'); } 
     });
 
-    // Native App Builder Compilation Submission Handler (Saves customCode before compilation)
     document.getElementById('app-studio-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = e.target.querySelector('button[type="submit"]');
         const projectId = document.getElementById('app-project-id').value;
         const platform = document.getElementById('app-platform').value;
         const appName = document.getElementById('app-name-input').value;
-        const iconFile = document.getElementById('app-icon-input').files[0];
-        const customCode = document.getElementById('app-custom-code-input').value;
 
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Compiling...';
-
+        btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Compiling...';
         try {
-            // First: Save the custom code to the MongoDB project document securely
-            await apiFetch(`/project/${projectId}/custom-code`, {
-                method: 'POST',
-                body: { customCode }
-            });
-
-            // Second: Trigger the compilation process with App Name and Icons
             const formData = new FormData();
             formData.append('platform', platform);
             formData.append('appName', appName);
-            if (iconFile) {
-                formData.append('icon', iconFile);
-            }
+            if (document.getElementById('app-icon-input').files[0]) formData.append('icon', document.getElementById('app-icon-input').files[0]);
 
-            // Re-routed to use secure apiFetch wrapper instead of raw unauthenticated fetch
-            const res = await apiFetch(`/projects/${projectId}/build-app`, {
-                method: 'POST',
-                body: formData
-            });
-
-            showToast('Compilation started successfully!', 'success');
-            hideModals();
-            fetchAndRenderProjects(false);
-        } catch (error) {
-            showToast(error.message, 'error');
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = 'Compile Application';
-        }
+            await apiFetch(`/projects/${projectId}/build-app`, { method: 'POST', body: formData });
+            showToast('PWA Deployment Active!', 'success');
+            hideModals(); fetchAndRenderProjects(true);
+        } catch (error) { showToast(error.message, 'error'); } 
+        finally { btn.disabled = false; btn.innerHTML = 'Compile PWA App'; }
     });
 
-    // Standalone Direct URL-to-App Compiler Submission Handler
     document.getElementById('direct-compile-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = document.getElementById('direct-compile-btn');
         const statusDiv = document.getElementById('direct-build-status');
-        const url = document.getElementById('direct-url').value;
-        const appName = document.getElementById('direct-name').value;
-        const platform = document.getElementById('direct-platform').value;
-        const iconFile = document.getElementById('direct-icon').files[0];
-
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Compiling...';
         
+        btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Compiling...';
         statusDiv.classList.remove('hidden');
-        statusDiv.innerHTML = `
-            <div class="flex items-center gap-2 text-amber-400 font-bold">
-                <i class="fa-solid fa-spinner animate-spin"></i> Compiling WebView binary and native APIs...
-            </div>
-        `;
-
-        const formData = new FormData();
-        formData.append('url', url);
-        formData.append('appName', appName);
-        formData.append('platform', platform);
-        if (iconFile) {
-            formData.append('icon', iconFile);
-        }
+        statusDiv.innerHTML = `<div class="text-amber-400 font-bold"><i class="fa-solid fa-spinner animate-spin"></i> Compiling VBS Launcher...</div>`;
 
         try {
-            // Re-routed to use secure apiFetch wrapper instead of raw unauthenticated fetch
-            const data = await apiFetch('/build-app-direct', {
-                method: 'POST',
-                body: formData
-            });
+            const formData = new FormData();
+            formData.append('url', document.getElementById('direct-url').value);
+            formData.append('appName', document.getElementById('direct-name').value);
+            formData.append('platform', document.getElementById('direct-platform').value);
+
+            const data = await apiFetch('/build-app-direct', { method: 'POST', body: formData });
             
-            // Build timeout tracking overlay loop (passing custom appName as query parameter)
             setTimeout(() => {
-                const customDownloadUrl = `${data.downloadUrl}?name=${encodeURIComponent(appName)}`;
                 statusDiv.innerHTML = `
-                    <div class="flex items-center gap-2 text-emerald-400 font-bold">
-                        <i class="fa-solid fa-circle-check"></i> WebView package compilation successful!
-                    </div>
-                    <a href="${customDownloadUrl}" class="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-white rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1.5 shadow-lg">
-                        <i class="fa-solid fa-cloud-arrow-down"></i> Download ${platform === 'android' ? '.APK' : '.VBS'}
-                    </a>
-                `;
-                btn.disabled = false;
-                btn.innerHTML = 'Compile Application';
-                showToast('App compiled successfully!', 'success');
-            }, 6000);
-
-        } catch (error) {
-            showToast(error.message, 'error');
-            statusDiv.classList.add('hidden');
-            btn.disabled = false;
-            btn.innerHTML = 'Compile Application';
-        }
+                    <div class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check"></i> Package ready!</div>
+                    <a href="${data.downloadUrl}" target="_blank" class="px-4 py-2 bg-emerald-500/10 text-emerald-400 hover:text-white rounded-lg text-xs font-bold"><i class="fa-solid fa-cloud-arrow-down"></i> Download</a>`;
+                btn.disabled = false; btn.innerHTML = 'Compile Application';
+            }, 5000);
+        } catch (error) { showToast(error.message, 'error'); btn.disabled = false; btn.innerHTML = 'Compile Application'; }
     });
 
-    document.getElementById('logout-btn').addEventListener('click', () => { 
-        localStorage.removeItem('token'); 
-        window.location.replace('/index.html'); 
-    });
-    
+    document.getElementById('logout-btn').addEventListener('click', () => { localStorage.removeItem('token'); window.location.replace('/index.html'); });
     document.getElementById('sync-btn').addEventListener('click', () => fetchAndRenderProjects(false));
 
     function showToast(message, type = 'success') {
         if (!toast) return;
         toast.textContent = message;
         toast.className = `fixed bottom-[-100px] left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl border font-bold text-sm shadow-2xl transition-all duration-300 z-50 show`;
-        if (type === 'success') {
-            toast.classList.add('bg-emerald-500/10', 'border-emerald-500/25', 'text-emerald-400');
-            toast.classList.remove('bg-red-500/10', 'border-red-500/25', 'text-red-400');
-        } else {
-            toast.classList.add('bg-red-500/10', 'border-red-500/25', 'text-red-400');
-            toast.classList.remove('bg-emerald-500/10', 'border-emerald-500/25', 'text-emerald-400');
-        }
+        if (type === 'success') toast.classList.add('bg-emerald-500/10', 'border-emerald-500/25', 'text-emerald-400');
+        else toast.classList.add('bg-red-500/10', 'border-red-500/25', 'text-red-400');
         setTimeout(() => { toast.style.bottom = '30px'; }, 50);
         setTimeout(() => { toast.style.bottom = '-100px'; }, 4000);
     }
 
-    // Initialize Dashboard
     fetchAndRenderProjects(false);
     loadSavedPat(); 
     
-    // Auto status poller: Watches the DOM for ongoing builds and updates silently without flashing loader
-    setInterval(async () => {
-        try {
-            // Detect if any project card is currently showing an active loading state in the DOM
-            const isUIRenderingActiveBuild = document.body.innerHTML.includes('fa-spinner animate-spin') || 
-                                             document.querySelector('.status-badge.deploying, .status-badge.queued') !== null;
-            
-            if (isUIRenderingActiveBuild) {
-                await fetchAndRenderProjects(true); // Run silent updates
-            }
-        } catch (e) {
-            console.error("Sync poller failure:", e);
-        }
-    }, 4000);
+    setInterval(() => {
+        if (document.body.innerHTML.includes('fa-spinner animate-spin') || document.querySelector('.status-badge.deploying, .status-badge.queued') !== null) fetchAndRenderProjects(true);
+    }, 5000);
 });
 </script>
 </body>

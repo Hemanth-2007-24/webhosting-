@@ -57,8 +57,76 @@ class MemoryBuildQueue {
             // Absolute destination routing target
             const targetProjectUrl = `${protocol}://${host}/${project.subdomain}`;
 
+            // =================================================================
+            // --- PWA (PROGRESSIVE WEB APP) INJECTION SEQUENCE ---
+            // Configures the live deployment to function natively as a PWA
+            // allowing it to be installed locally on both Android and Windows.
+            // =================================================================
+            const deployDir = path.join(__dirname, 'deployments', projectId.toString());
+            if (await fs.pathExists(deployDir)) {
+                logAccumulator += `[PWA] Injecting Progressive Web App (PWA) assets for Android and Windows...\n`;
+                
+                // 1. Generate Manifest
+                const manifest = {
+                    name: project.appName || project.projectName || "PWA Application",
+                    short_name: project.appName || project.projectName || "App",
+                    start_url: `./`,
+                    display: "standalone",
+                    background_color: project.themeColor || "#ffffff",
+                    theme_color: project.themeColor || "#6366F1",
+                    icons: [{
+                        src: project.iconUrl || "https://cdn-icons-png.flaticon.com/512/5266/5266152.png",
+                        sizes: "512x512",
+                        type: "image/png",
+                        purpose: "any maskable"
+                    }]
+                };
+                await fs.writeJson(path.join(deployDir, 'manifest.json'), manifest, { spaces: 2 });
+
+                // 2. Generate Service Worker for caching and offline capabilities
+                const swCode = `
+const CACHE_NAME = 'pwa-cache-${projectId}';
+self.addEventListener('install', e => { 
+    e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(['./', './index.html', './manifest.json']))); 
+});
+self.addEventListener('fetch', e => { 
+    e.respondWith(caches.match(e.request).then(res => res || fetch(e.request))); 
+});`;
+                await fs.writeFile(path.join(deployDir, 'service-worker.js'), swCode.trim());
+
+                // 3. Inject PWA Tags into the main index.html
+                const indexPath = path.join(deployDir, 'index.html');
+                if (await fs.pathExists(indexPath)) {
+                    let html = await fs.readFile(indexPath, 'utf8');
+                    if (!html.includes('manifest.json')) {
+                        const injection = `
+    <!-- PWA Installation Setup -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="${project.themeColor || '#6366F1'}">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(() => console.log('PWA ServiceWorker registered successfully.'))
+                    .catch(err => console.error('PWA ServiceWorker registration failed:', err));
+            });
+        }
+    </script>
+</head>`;
+                        html = html.replace(/<\/head>/i, injection);
+                        await fs.writeFile(indexPath, html);
+                        logAccumulator += `[PWA] Successfully enabled PWA capabilities on live deployment.\n`;
+                    }
+                }
+            }
+
+            // =================================================================
+            // --- NATIVE LAUNCHER BUNDLING ---
+            // =================================================================
             if (platform === 'windows') {
-                logAccumulator += `[WINDOWS] Compiling silent VBScript desktop launcher...\n`;
+                logAccumulator += `[WINDOWS] Compiling silent VBScript desktop launcher for PWA...\n`;
+                
+                // Using Edge's PWA Mode (--app=) which natively reads the injected manifest.json
                 const vbsScript = `Set WshShell = CreateObject("WScript.Shell")\nWshShell.Run "msedge.exe --app=${targetProjectUrl} --window-size=1280,800", 0, false\n`;
                 await fs.outputFile(`${finalPackagePath}.vbs`, vbsScript);
                 
