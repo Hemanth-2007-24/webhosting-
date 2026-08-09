@@ -16,9 +16,9 @@ const mongoose = require('mongoose');
 const cuid = require('cuid');
 const unzipper = require('unzipper');
 const simpleGit = require('simple-git');
-const archiver = require('archiver'); // Pure JS ZIP Compiler
 
 // --- CRITICAL UNCAUGHT EXCEPTION SAFETY HANDLERS ---
+// Prevents any runtime compilation, connection, or database errors from crashing the Node container process on Back4app.
 process.on('uncaughtException', (err) => {
     console.error('🔥 CRITICAL UNCAUGHT EXCEPTION ENCOUNTERED:');
     console.error(err.message);
@@ -37,12 +37,13 @@ const PORT = process.env.PORT || 8080;
 
 if (!process.env.MONGO_URI) {
     console.warn("⚠️ WARNING: MONGO_URI environment variable is missing!");
-    console.warn("Please add MONGO_URI to your Back4App/Railway environment variables.");
+    console.warn("Please add MONGO_URI to your Back4App Container environment variables.");
     
     app.get('*', (req, res) => {
         res.status(500).send(`
             <h1>WebHost is in Safe Mode</h1>
             <p><strong>Config Error:</strong> MONGO_URI is missing from your environment variables.</p>
+            <p>Please configure MONGO_URI inside your Back4App dashboard variables settings.</p>
         `);
     });
     
@@ -90,15 +91,6 @@ const authenticateToken = (req, res, next) => {
         req.user = user;
         next();
     });
-};
-
-// --- ADMIN AUTHORIZATION MIDDLEWARE ---
-const requireAdmin = (req, res, next) => {
-    if (req.user && req.user.role === 'admin') {
-        next();
-    } else {
-        res.status(403).json({ message: "Forbidden: Administrative privileges required." });
-    }
 };
 
 // --- SMART INDEX FINDER SYSTEM ---
@@ -166,6 +158,49 @@ function zipDirectory(sourceDir, outPath) {
         archive.finalize();
     });
 }
+
+// --- AUTOMATED ANDROID WEBVIEW TEMPLATE RESOLVER & CREATOR ---
+const APPS_DIR = path.join(__dirname, 'compiled_apps');
+const TEMPLATE_APK_PATH = path.join(APPS_DIR, 'webview_base_template.apk');
+const LOCAL_TEMPLATE_SOURCE = path.join(__dirname, 'your-template.apk');
+
+async function ensureBaseApkTemplate() {
+    if (await fs.pathExists(TEMPLATE_APK_PATH)) {
+        if (!(await fs.pathExists(LOCAL_TEMPLATE_SOURCE))) {
+            await fs.copy(TEMPLATE_APK_PATH, LOCAL_TEMPLATE_SOURCE);
+        }
+        return;
+    }
+
+    if (await fs.pathExists(LOCAL_TEMPLATE_SOURCE)) {
+        console.log("📥 Copying local 'your-template.apk' from root workspace to compiler cache...");
+        await fs.ensureDir(path.dirname(TEMPLATE_APK_PATH));
+        await fs.copy(LOCAL_TEMPLATE_SOURCE, TEMPLATE_APK_PATH);
+        console.log("✅ Local APK template copied successfully.");
+        return;
+    }
+
+    try {
+        const fallbackUrl = 'https://raw.githubusercontent.com/bishwassagar/Android-Webview-App/master/app/release/app-release.apk';
+        console.log(`📥 Base template missing. Downloading baseline APK template from secure fallback repository: ${fallbackUrl}`);
+        
+        const response = await fetch(fallbackUrl);
+        if (!response.ok) {
+            throw new Error(`Fallback repository returned HTTP status: ${response.status}`);
+        }
+        
+        const buffer = await response.arrayBuffer();
+        await fs.ensureDir(path.dirname(TEMPLATE_APK_PATH));
+        await fs.writeFile(TEMPLATE_APK_PATH, Buffer.from(buffer));
+        await fs.copy(TEMPLATE_APK_PATH, LOCAL_TEMPLATE_SOURCE);
+        console.log("✅ Baseline APK template compiled and cached successfully both in workspace and root directory.");
+    } catch (err) {
+        console.error("❌ Failed to resolve baseline APK template:", err.message);
+        throw new Error("Unable to retrieve baseline APK template. Please place a valid APK inside your root folder named 'your-template.apk' and push via Git.");
+    }
+}
+
+ensureBaseApkTemplate().catch(err => console.error("⚠️ Background template check skipped:", err.message));
 
 // --- DEFENSIVE ZIP EXTRACTION PIPELINE (Anti-Zip Bomb & Path Traversal) ---
 async function extractZipSafely(zipPath, targetDir) {
@@ -919,5 +954,4 @@ app.get('*', (req, res) => {
 });
 
 // --- SERVER INITIALIZATION ---
-const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log("🚀 WebHost Core Engine operational on port " + PORT));
