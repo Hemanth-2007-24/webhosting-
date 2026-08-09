@@ -32,6 +32,7 @@
 <body class="font-sans bg-bg-dark text-white min-h-screen relative overflow-x-hidden selection:bg-indigo-500 selection:text-white">
     <script>if (!localStorage.getItem('token')) { window.location.replace('/index.html'); }</script>
 
+    <!-- Ambient Glow BG -->
     <div class="absolute inset-0 pointer-events-none z-0">
         <div class="absolute top-[5%] left-[10%] w-96 h-96 rounded-full bg-indigo-600/10 blur-[120px]"></div>
         <div class="absolute bottom-[20%] right-[10%] w-[500px] h-[500px] rounded-full bg-violet-600/10 blur-[150px]"></div>
@@ -47,59 +48,72 @@
         </div>
     </header>
 
-    <main class="max-w-7xl mx-auto px-6 py-12 relative z-10 space-y-10">
+    <main class="max-w-7xl mx-auto px-6 py-12 relative z-10 space-y-12">
         
+        <!-- Jumbotron Hero -->
         <div class="bg-gradient-to-r from-slate-900/60 to-slate-800/20 border border-white/[0.05] p-8 sm:p-10 rounded-[28px] shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div class="space-y-2">
                 <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">My Projects Dashboard</h2>
                 <p class="text-slate-400 text-sm max-w-lg">Deploy static sites securely and convert instantly into native Android PWAs and Windows Desktop launchers.</p>
             </div>
-            <div class="flex gap-3">
+            <div class="flex gap-3 shrink-0">
                 <button id="new-project-btn" class="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all shadow-lg text-sm"><i class="fa-solid fa-plus mr-1"></i> New Project</button>
                 <button id="sync-btn" class="px-4 py-2.5 bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] rounded-xl text-sm transition-all"><i class="fa-solid fa-sync"></i></button>
             </div>
         </div>
 
-        <div id="direct-compiler-panel" class="glass-card p-6 sm:p-8 rounded-[28px] max-w-3xl mx-auto space-y-6">
-            <div class="flex items-center gap-3">
-                <div class="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-                    <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
-                </div>
-                <div>
-                    <h3 class="font-display font-extrabold text-xl text-white">Instant Web-to-App Studio</h3>
-                    <p class="text-xs text-slate-400">Convert any live URL into a standalone Windows PWA launcher.</p>
-                </div>
+        <!-- Section: Provisioned Containers (MOVED TO TOP) -->
+        <div class="space-y-5">
+            <div class="flex items-center gap-3 border-b border-white/[0.05] pb-3">
+                <div class="p-2 rounded-lg bg-indigo-500/10 text-indigo-400"><i class="fa-solid fa-server"></i></div>
+                <h2 class="font-display font-extrabold text-2xl text-white tracking-tight">Provisioned Containers</h2>
             </div>
-            
-            <form id="direct-compile-form" class="grid sm:grid-cols-2 gap-4">
-                <div class="sm:col-span-2">
-                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Website URL</label>
-                    <input type="url" id="direct-url" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="https://example.com" required>
-                </div>
-                <div>
-                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Application Name</label>
-                    <input type="text" id="direct-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="My App" required>
-                </div>
-                <div>
-                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Target Platform</label>
-                    <select id="direct-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500">
-                        <option value="windows">Windows PWA Desktop (.VBS)</option>
-                    </select>
-                </div>
-                <div class="sm:col-span-2 flex flex-col sm:flex-row items-end justify-between gap-4 pt-2">
-                    <button type="submit" id="direct-compile-btn" class="w-full sm:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all uppercase text-xs tracking-wider h-11 ml-auto">Compile Application</button>
-                </div>
-            </form>
-            <div id="direct-build-status" class="hidden p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm"></div>
+            <div id="projects-list" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Project Cards Injected Here Dynamically -->
+            </div>
         </div>
 
-        <div id="projects-list" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- Project Cards Injected Here -->
+        <!-- Section: Web-to-App Direct Studio (MOVED TO BOTTOM) -->
+        <div class="space-y-5">
+            <div class="flex items-center gap-3 border-b border-white/[0.05] pb-3">
+                <div class="p-2 rounded-lg bg-violet-500/10 text-violet-400"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                <h2 class="font-display font-extrabold text-2xl text-white tracking-tight">Direct URL-to-App Studio</h2>
+            </div>
+
+            <div id="direct-compiler-panel" class="glass-card p-6 sm:p-8 rounded-[28px] max-w-3xl space-y-6">
+                <div class="flex items-center gap-3">
+                    <div>
+                        <h3 class="font-display font-extrabold text-lg text-white">Standalone Application Builder</h3>
+                        <p class="text-xs text-slate-400">Convert any live URL on the internet into a standalone Windows PWA launcher.</p>
+                    </div>
+                </div>
+                
+                <form id="direct-compile-form" class="grid sm:grid-cols-2 gap-4">
+                    <div class="sm:col-span-2">
+                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Website URL</label>
+                        <input type="url" id="direct-url" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="https://example.com" required>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Application Name</label>
+                        <input type="text" id="direct-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="My App" required>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Target Platform</label>
+                        <select id="direct-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500">
+                            <option value="windows">Windows PWA Desktop (.VBS)</option>
+                        </select>
+                    </div>
+                    <div class="sm:col-span-2 flex flex-col sm:flex-row items-end justify-between gap-4 pt-2">
+                        <button type="submit" id="direct-compile-btn" class="w-full sm:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all uppercase text-xs tracking-wider h-11 ml-auto">Compile Application</button>
+                    </div>
+                </form>
+                <div id="direct-build-status" class="hidden p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm"></div>
+            </div>
         </div>
 
-        <div class="grid lg:grid-cols-12 gap-8 max-w-7xl mx-auto pt-6">
+        <div class="grid lg:grid-cols-12 gap-8 max-w-7xl mx-auto pt-6 border-t border-white/[0.05]">
             <div id="pat-config-section" class="lg:col-span-12 space-y-4">
-                <!-- Rendered dynamically -->
+                <!-- GitHub config Rendered dynamically -->
             </div>
         </div>
     </main>
@@ -118,6 +132,7 @@
             <p class="text-[10px] text-slate-500 font-mono break-all" id="qr-url-text"></p>
         </div>
 
+        <!-- NEW PROJECT MODAL -->
         <div id="new-project-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
             <h2 class="font-display font-extrabold text-2xl mb-4">Create Container</h2>
@@ -133,6 +148,7 @@
             </form>
         </div>
 
+        <!-- DEPLOY CONTAINER MODAL -->
         <div id="deploy-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-lg hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
             <h2 class="font-display font-extrabold text-2xl mb-1">Deploy static assets</h2>
@@ -179,6 +195,7 @@
             </form>
         </div>
 
+        <!-- APP STUDIO MODAL -->
         <div id="app-studio-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
             <h2 class="font-display font-extrabold text-2xl mb-2">App & PWA Studio</h2>
@@ -247,8 +264,19 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const projects = await apiFetch('/projects'); 
             projectsList.innerHTML = ''; 
+            
+            // Empty State Handling
             if (!projects || projects.length === 0) { 
-                projectsList.innerHTML = `<p class="text-center py-12 col-span-full text-slate-500 font-medium">No project containers initiated yet.</p>`; 
+                projectsList.innerHTML = `
+                    <div class="col-span-full glass-card p-10 rounded-[28px] text-center flex flex-col items-center justify-center border border-dashed border-white/[0.1] py-16">
+                        <div class="w-16 h-16 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 mb-4">
+                            <i class="fa-solid fa-server text-2xl"></i>
+                        </div>
+                        <h3 class="text-xl font-display font-bold text-white mb-2">No Containers Found</h3>
+                        <p class="text-sm text-slate-400 max-w-md mb-6">You haven't provisioned any projects yet. Click "New Project" above to launch your first hosted container.</p>
+                        <button class="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all shadow-lg text-sm" onclick="document.getElementById('new-project-btn').click()"><i class="fa-solid fa-plus mr-1"></i> New Project</button>
+                    </div>
+                `; 
             } else { 
                 projects.forEach(project => { 
                     const card = document.createElement('div'); 
@@ -258,7 +286,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     const projectTitle = project.projectName || 'App';
                     const displayAppName = project.appName || projectTitle;
 
-                    // NEW Beautiful App Downloads UI Rendering Below App Studio Buttons
                     let appDownloadsHTML = '';
                     if (project.appAndroidStatus === 'ready' || project.appWindowsStatus === 'ready') {
                         appDownloadsHTML = `
@@ -470,10 +497,56 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('App Configuration Active!', 'success');
             hideModals(); fetchAndRenderProjects(true);
         } catch (error) { showToast(error.message, 'error'); } 
-        finally { btn.disabled = false; btn.innerHTML = 'Compile App Configuration'; }
+        finally { btn.disabled = false; btn.innerHTML = 'Compile App'; }
     });
 
     document.getElementById('direct-compile-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = document.getElementById('direct-compile-btn');
         const statusDiv = document.getElementById('direct-build-status');
+        
+        btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Compiling...';
+        statusDiv.classList.remove('hidden');
+        statusDiv.innerHTML = `<div class="text-amber-400 font-bold"><i class="fa-solid fa-spinner animate-spin"></i> Compiling binary...</div>`;
+
+        try {
+            const formData = new FormData();
+            formData.append('url', document.getElementById('direct-url').value);
+            formData.append('appName', document.getElementById('direct-name').value);
+            const platform = document.getElementById('direct-platform').value;
+            formData.append('platform', platform);
+
+            const data = await apiFetch('/build-app-direct', { method: 'POST', body: formData });
+            
+            setTimeout(() => {
+                statusDiv.innerHTML = `
+                    <div class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check"></i> Package ready!</div>
+                    <a href="${data.downloadUrl}" target="_blank" class="px-4 py-2 bg-emerald-500/10 text-emerald-400 hover:text-white rounded-lg text-xs font-bold"><i class="fa-solid fa-cloud-arrow-down"></i> Download Launcher</a>`;
+                btn.disabled = false; btn.innerHTML = 'Compile Application';
+            }, 3000);
+        } catch (error) { showToast(error.message, 'error'); btn.disabled = false; btn.innerHTML = 'Compile Application'; }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', () => { localStorage.removeItem('token'); window.location.replace('/index.html'); });
+    document.getElementById('sync-btn').addEventListener('click', () => fetchAndRenderProjects(false));
+
+    function showToast(message, type = 'success') {
+        if (!toast) return;
+        toast.textContent = message;
+        toast.className = `fixed bottom-[-100px] left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl border font-bold text-sm shadow-2xl transition-all duration-300 z-50 show`;
+        if (type === 'success') toast.classList.add('bg-emerald-500/10', 'border-emerald-500/25', 'text-emerald-400');
+        else toast.classList.add('bg-red-500/10', 'border-red-500/25', 'text-red-400');
+        setTimeout(() => { toast.style.bottom = '30px'; }, 50);
+        setTimeout(() => { toast.style.bottom = '-100px'; }, 4000);
+    }
+
+    fetchAndRenderProjects(false);
+    loadSavedPat(); 
+    
+    setInterval(() => {
+        if (document.body.innerHTML.includes('fa-spinner animate-spin') || document.querySelector('.status-badge.deploying, .status-badge.queued') !== null) fetchAndRenderProjects(true);
+    }, 5000);
+});
+</script>
+</body>
+</html>
