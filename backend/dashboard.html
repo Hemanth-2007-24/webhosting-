@@ -62,14 +62,11 @@
         <div class="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_40%,#000_70%,transparent_100%)]"></div>
     </div>
 
-    <!-- Header navigation -->
     <header class="sticky top-0 z-50 w-full bg-bg-dark/75 backdrop-blur-xl border-b border-white/[0.06] h-16 flex items-center justify-between px-6 box-border">
         <div class="flex items-center gap-8">
-            <a href="/" class="logo flex items-center gap-2 tracking-tight font-display font-extrabold text-xl">
-                WebHost
-            </a>
+            <a href="/" class="logo flex items-center gap-2 tracking-tight font-display font-extrabold text-xl">WebHost</a>
             <div class="hidden md:flex gap-1">
-                <button id="nav-dash" class="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/[0.02]">Dashboard</button>
+                <button class="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/[0.02]">Dashboard</button>
             </div>
         </div>
         <div class="flex items-center gap-3">
@@ -79,19 +76,17 @@
 
     <main class="max-w-7xl mx-auto px-6 py-12 relative z-10 space-y-10">
         
-        <!-- Welcome Jumbotron Hero -->
         <div class="bg-gradient-to-r from-slate-900/60 to-slate-800/20 border border-white/[0.05] p-8 sm:p-10 rounded-[28px] shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div class="space-y-2">
                 <h2 class="font-display font-extrabold text-3xl sm:text-4xl bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">My Projects Dashboard</h2>
-                <p class="text-slate-400 text-sm max-w-lg">Provision sandboxed containers on Edge caching clusters. Deploy safely from private Git streams.</p>
+                <p class="text-slate-400 text-sm max-w-lg">Provision sandboxed containers. Deploy safely from Git or zip and convert instantly to native apps.</p>
             </div>
             <div class="flex gap-3">
-                <button id="new-project-btn" class="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 text-sm"><i class="fa-solid fa-plus mr-1"></i> New Project</button>
+                <button id="new-project-btn" class="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all shadow-lg text-sm"><i class="fa-solid fa-plus mr-1"></i> New Project</button>
                 <button id="sync-btn" class="px-4 py-2.5 bg-white/[0.03] border border-white/[0.08] hover:border-white/[0.15] rounded-xl text-sm transition-all"><i class="fa-solid fa-sync"></i></button>
             </div>
         </div>
 
-        <!-- Standalone Instant Web-to-App Direct Compiler Panel -->
         <div id="direct-compiler-panel" class="glass-card p-6 sm:p-8 rounded-[28px] max-w-3xl mx-auto space-y-6">
             <div class="flex items-center gap-3">
                 <div class="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
@@ -99,7 +94,7 @@
                 </div>
                 <div>
                     <h3 class="font-display font-extrabold text-xl text-white">Instant Web-to-App Studio</h3>
-                    <p class="text-xs text-slate-400">Convert any live website into an installable Web App and standalone Windows PWA launcher (.VBS).</p>
+                    <p class="text-xs text-slate-400">Convert any live URL into a standalone Android APK or Windows PWA launcher.</p>
                 </div>
             </div>
             
@@ -110,32 +105,34 @@
                 </div>
                 <div>
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Application Name</label>
-                    <input type="text" id="direct-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="My Native App" required>
+                    <input type="text" id="direct-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500 text-sm" placeholder="My App" required>
                 </div>
                 <div>
                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Target Platform</label>
                     <select id="direct-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500">
+                        <option value="android">Android Mobile (.APK)</option>
                         <option value="windows">Windows PWA Desktop (.VBS)</option>
                     </select>
                 </div>
                 <div class="sm:col-span-2 flex flex-col sm:flex-row items-end justify-between gap-4 pt-2">
-                    <button type="submit" id="direct-compile-btn" class="w-full sm:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all shadow-lg uppercase text-xs tracking-wider shrink-0 h-11 ml-auto">Compile Application</button>
+                    <div class="flex-1 w-full">
+                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1.5">App Icon (Optional)</label>
+                        <input type="file" id="direct-icon" class="w-full p-2.5 bg-black/45 border border-white/[0.08] rounded-xl text-xs" accept="image/png, image/jpeg">
+                    </div>
+                    <button type="submit" id="direct-compile-btn" class="w-full sm:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl transition-all uppercase text-xs tracking-wider h-11">Compile Application</button>
                 </div>
             </form>
             
             <div id="direct-build-status" class="hidden p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm">
-                <!-- Injected dynamically -->
             </div>
         </div>
 
-        <!-- Dashboard tab contents -->
         <div id="projects-list" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <!-- Project Cards Injected Here -->
         </div>
 
-        <!-- Credentials Section -->
-        <div class="max-w-7xl mx-auto pt-6">
-            <div id="pat-config-section" class="space-y-4">
+        <div class="grid lg:grid-cols-12 gap-8 max-w-7xl mx-auto pt-6">
+            <div id="pat-config-section" class="lg:col-span-12 space-y-4">
                 <!-- Rendered dynamically -->
             </div>
         </div>
@@ -144,7 +141,6 @@
     <!-- BACKDROP & MODAL MANAGER -->
     <div id="modal-backdrop" class="fixed inset-0 bg-black/85 backdrop-blur-md hidden items-center justify-center p-4 z-50 opacity-0">
         
-        <!-- NEW PROJECT MODAL -->
         <div id="new-project-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
             <h2 class="font-display font-extrabold text-2xl mb-4">Create Container</h2>
@@ -154,13 +150,12 @@
                   <input type="text" id="project-name" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500" placeholder="my-awesome-site" required>
                 </div>
                 <div class="flex justify-end gap-2 pt-4">
-                    <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
-                    <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs shadow-lg">Launch Container</button>
+                    <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs" data-close-modal>Cancel</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs">Launch Container</button>
                 </div>
             </form>
         </div>
 
-        <!-- DEPLOY CONTAINER MODAL -->
         <div id="deploy-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-lg hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
             <h2 class="font-display font-extrabold text-2xl mb-1">Deploy static assets</h2>
@@ -178,14 +173,14 @@
                         <label class="text-xs font-bold text-slate-400 uppercase block">Select Git Repository</label>
                         <div class="flex gap-2">
                             <select id="repo-select" class="flex-1 p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500"></select>
-                            <button type="button" id="toggle-manual-btn" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]">Or Link Manual</button>
+                            <button type="button" id="toggle-manual-btn" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs hover:bg-white/[0.08]">Or Link Manual</button>
                         </div>
                     </div>
                     <div id="manual-url-container" class="space-y-2">
                         <label class="text-xs font-bold text-slate-400 uppercase block">Repository HTTPS Clone URL</label>
                         <div class="flex gap-2">
                             <input type="url" id="git-url" class="flex-1 p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" placeholder="https://github.com/user/repo.git">
-                            <button type="button" id="toggle-select-btn" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08] hidden">Select Repo</button>
+                            <button type="button" id="toggle-select-btn" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs hidden hover:bg-white/[0.08]">Select Repo</button>
                         </div>
                     </div>
                 </div>
@@ -195,27 +190,32 @@
                     <input type="file" id="zip-file" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-sm" accept=".zip">
                 </div>
 
+                <div class="space-y-2">
+                    <label class="text-xs font-bold text-slate-400 uppercase block">Root Directory Override (Optional)</label>
+                    <input type="text" id="root-dir" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" placeholder="e.g. dist, build, public">
+                </div>
+
                 <div class="flex justify-end gap-2 pt-4">
-                    <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
-                    <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs shadow-lg">Start Deploy Pipeline</button>
+                    <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs" data-close-modal>Cancel</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs">Start Deploy Pipeline</button>
                 </div>
             </form>
         </div>
 
-        <!-- APP STUDIO MODAL WITH IMAGE ICON FILE UPLOADER & CUSTOM CODE EDITOR -->
         <div id="app-studio-modal" class="modal glass-card p-6 sm:p-8 rounded-[28px] w-full max-w-md hidden relative">
             <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-modal><i class="fa-solid fa-xmark"></i></button>
-            <h2 class="font-display font-extrabold text-2xl mb-2">PWA & Native Studio</h2>
-            <p class="text-xs text-slate-500 mb-6">Inject PWA features into your site and compile a standalone Windows launcher (.VBS).</p>
+            <h2 class="font-display font-extrabold text-2xl mb-2">App & PWA Studio</h2>
+            <p class="text-xs text-slate-500 mb-6">Compile deployed website into Native Android APK and Windows PWA (.VBS). This also natively configures the web deployment as a PWA.</p>
             <form id="app-studio-form" class="space-y-4">
                 <input type="hidden" id="app-project-id">
                 <div>
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Application Name</label>
-                  <input type="text" id="app-name-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500" placeholder="My Desktop App" required>
+                  <input type="text" id="app-name-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white focus:outline-none focus:border-indigo-500" placeholder="My Mobile App" required>
                 </div>
                 <div>
                   <label class="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Target Platform</label>
                   <select id="app-platform" class="w-full p-3 bg-slate-950 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500" required>
+                      <option value="android">Android Native Application (.APK)</option>
                       <option value="windows">Windows PWA Desktop (.VBS)</option>
                   </select>
                 </div>
@@ -224,8 +224,8 @@
                   <input type="file" id="app-icon-input" class="w-full p-3 bg-black/45 border border-white/[0.08] rounded-xl text-sm" accept="image/png, image/jpeg">
                 </div>
                 <div class="flex justify-end gap-2 pt-4">
-                    <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs font-semibold hover:bg-white/[0.08]" data-close-modal>Cancel</button>
-                    <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs shadow-lg">Compile PWA App</button>
+                    <button type="button" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-lg text-xs" data-close-modal>Cancel</button>
+                    <button type="submit" class="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 font-semibold rounded-lg text-xs">Compile</button>
                 </div>
             </form>
         </div>
@@ -244,21 +244,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let hasSavedPat = false;
 
     const apiFetch = async (endpoint, options = {}) => { 
-        const headers = {
-            'Authorization': `Bearer ${token}`,
-            ...options.headers
-        };
+        const headers = { 'Authorization': `Bearer ${token}`, ...options.headers };
         let body = options.body;
         if (body && typeof body === 'object' && !(body instanceof FormData)) {
             headers['Content-Type'] = 'application/json';
             body = JSON.stringify(body);
         }
         const res = await fetch(`${API_BASE_URL}/api${endpoint}`, { ...options, headers, body }); 
-        if (res.status === 401) { 
-            localStorage.removeItem('token'); 
-            window.location.replace('/index.html'); 
-            throw new Error('Session expired'); 
-        } 
+        if (res.status === 401) { localStorage.removeItem('token'); window.location.replace('/index.html'); throw new Error('Session expired'); } 
         if (res.status === 204) return; 
 
         const contentType = res.headers.get("content-type");
@@ -273,9 +266,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const fetchAndRenderProjects = async (isSilent = false) => { 
         try { 
-            if (!isSilent) {
-                projectsList.innerHTML = `<div class="text-center py-12 col-span-full"><i class="fa-solid fa-spinner animate-spin text-3xl text-indigo-400 mb-2"></i><p class="text-slate-400 text-sm">Loading containers...</p></div>`; 
-            }
+            if (!isSilent) projectsList.innerHTML = `<div class="text-center py-12 col-span-full"><i class="fa-solid fa-spinner animate-spin text-3xl text-indigo-400 mb-2"></i><p class="text-slate-400 text-sm">Loading containers...</p></div>`; 
+            
             const projects = await apiFetch('/projects'); 
             projectsList.innerHTML = ''; 
             if (!projects || projects.length === 0) { 
@@ -286,12 +278,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     card.className = 'glass-card p-6 rounded-[24px] hover:border-white/[0.15] hover:translate-y-[-2px] transition-all flex flex-col justify-between gap-4'; 
 
                     let appDownloadsHTML = '';
-                    if (project.appWindowsStatus === 'ready') {
+                    if (project.appAndroidStatus === 'ready' || project.appWindowsStatus === 'ready') {
                         appDownloadsHTML = `
                             <div class="mt-2 pt-2 border-t border-white/[0.05] space-y-1.5">
-                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Compiled PWA Packages</span>
+                                <span class="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Compiled Packages</span>
                                 <div class="flex flex-wrap gap-1.5">
-                                    <a href="/api/projects/${project._id}/download-app/windows" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> Windows PWA .VBS</a>
+                                    ${project.appAndroidStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/android" class="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-android"></i> Android .APK</a>` : ''}
+                                    ${project.appWindowsStatus === 'ready' ? `<a href="/api/projects/${project._id}/download-app/windows" class="px-2.5 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 rounded-lg text-[10px] font-bold transition-all"><i class="fa-brands fa-windows"></i> Windows .VBS</a>` : ''}
                                 </div>
                             </div>
                         `;
@@ -299,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     let badgeHTML = '';
                     if (project.status === 'deploying' || project.status === 'queued') badgeHTML = `<span class="status-badge ${project.status}"><i class="fa-solid fa-spinner animate-spin mr-1"></i> ${project.status}</span>`;
-                    else if (project.appWindowsStatus === 'building') badgeHTML = `<span class="status-badge queued"><i class="fa-solid fa-spinner animate-spin mr-1"></i> BUNDLING</span>`;
+                    else if (project.appAndroidStatus === 'building' || project.appWindowsStatus === 'building') badgeHTML = `<span class="status-badge queued"><i class="fa-solid fa-spinner animate-spin mr-1"></i> BUNDLING</span>`;
                     else badgeHTML = `<span class="status-badge ${project.status || 'ready'}">${project.status || 'ready'}</span>`;
 
                     const projectTitle = project.projectName || 'App';
@@ -312,10 +305,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ${badgeHTML}
                             </div>
                             <a href="/${cleanSubdomain}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 font-bold tracking-wide flex items-center gap-1">/${cleanSubdomain} <i class="fa-solid fa-external-link text-[10px]"></i></a>
+                            ${project.rootDir ? `<div class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-1">Path: <span class="text-slate-300 font-mono">${project.rootDir}</span></div>` : ''}
                             ${appDownloadsHTML}
                         </div>
                         <div class="flex flex-wrap gap-2 pt-2 border-t border-white/[0.05]">
-                            <button class="flex-1 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-xl text-xs font-semibold transition-all deploy-btn" data-id="${project._id}" data-name="${projectTitle}">Deploy</button>
+                            <button class="flex-1 py-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 rounded-xl text-xs font-semibold transition-all deploy-btn" data-id="${project._id}" data-name="${projectTitle}" data-root-dir="${project.rootDir || ''}">Deploy</button>
                             <button class="flex-1 py-2 bg-violet-500/10 border border-violet-500/20 text-violet-400 hover:bg-violet-500/20 rounded-xl text-xs font-semibold transition-all app-studio-btn" data-id="${project._id}" data-name="${projectTitle}">App Studio</button>
                             <button class="px-3 py-2 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 rounded-xl text-xs transition-all delete-btn" data-id="${project._id}" data-name="${projectTitle}"><i class="fa-solid fa-trash"></i></button>
                         </div>
@@ -323,9 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     projectsList.appendChild(card); 
                 }); 
             } 
-        } catch (error) { 
-            showToast(error.message, 'error'); 
-        } 
+        } catch (error) { showToast(error.message, 'error'); } 
     };
 
     const loadSavedPat = async () => {
@@ -333,10 +325,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await apiFetch('/user/pat');
             if (data && data.pat) {
                 hasSavedPat = true;
-                patSection.innerHTML = `<div class="glass-card p-6 rounded-[24px] flex justify-between items-center border border-emerald-500/10"><div class="flex items-center gap-3"><div class="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400"><i class="fa-brands fa-github text-xl"></i></div><div><h3 class="font-display font-bold text-base text-white">GitHub Connected</h3></div></div><button id="edit-pat-btn" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-xl text-xs font-bold">Update Token</button></div>`;
+                patSection.innerHTML = `<div class="glass-card p-6 rounded-[24px] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-emerald-500/10"><div class="flex items-center gap-3"><div class="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400"><i class="fa-brands fa-github text-xl"></i></div><div><h3 class="font-display font-bold text-base text-white">GitHub Pipeline Connected</h3><p class="text-xs text-slate-400">Private repository listings are operational.</p></div></div><button id="edit-pat-btn" class="px-4 py-2 bg-white/[0.03] border border-white/[0.08] rounded-xl text-xs font-bold">Update Token</button></div>`;
                 document.getElementById('edit-pat-btn').addEventListener('click', () => hasSavedPat = false || loadSavedPat());
             } else {
-                patSection.innerHTML = `<div class="glass-card p-6 rounded-[24px] space-y-4"><div class="flex items-center gap-3"><div class="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400"><i class="fa-solid fa-key"></i></div><div><h3 class="font-display font-bold text-lg text-white">GitHub Token</h3></div></div><div class="flex gap-3"><input type="password" id="github-pat" class="flex-1 p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white font-mono text-sm" placeholder="ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"><button id="save-pat-btn" class="px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl text-xs">Save</button></div></div>`;
+                patSection.innerHTML = `<div class="glass-card p-6 rounded-[24px] space-y-4"><div class="flex items-center gap-3"><div class="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400"><i class="fa-solid fa-key"></i></div><div><h3 class="font-display font-bold text-lg text-white">Secure Git Credentials</h3><p class="text-xs text-slate-500">Provide token to clone private repositories.</p></div></div><div class="flex flex-col sm:flex-row gap-3"><input type="password" id="github-pat" class="flex-1 p-3 bg-black/45 border border-white/[0.08] rounded-xl text-white font-mono text-sm" placeholder="ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"><button id="save-pat-btn" class="px-6 py-3 bg-indigo-500 hover:bg-indigo-600 font-bold rounded-xl text-xs">Save Token</button></div></div>`;
                 document.getElementById('save-pat-btn').addEventListener('click', async () => {
                     await apiFetch('/user/pat', { method: 'POST', body: { pat: document.getElementById('github-pat').value } });
                     showToast('Saved', 'success'); loadSavedPat();
@@ -389,6 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (deployBtn) { 
             document.getElementById('deploy-project-name').textContent = deployBtn.dataset.name; 
             document.getElementById('deploy-project-id').value = deployBtn.dataset.id; 
+            document.getElementById('root-dir').value = deployBtn.dataset.rootDir || '';
             showModal(document.getElementById('deploy-modal')); 
             if (hasSavedPat) { loadUserRepos(); document.getElementById('repo-select-container').classList.remove('hidden'); document.getElementById('manual-url-container').classList.add('hidden'); }
         } 
@@ -423,9 +416,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('deploy-form').addEventListener('submit', async (e) => { 
         e.preventDefault(); 
+        const btn = e.target.querySelector('button[type="submit"]'); 
+        btn.disabled = true; btn.innerHTML = 'Deploying...'; 
         try { 
             const formData = new FormData(); 
             formData.append('projectId', document.getElementById('deploy-project-id').value); 
+            formData.append('rootDir', document.getElementById('root-dir').value);
+            
             if (document.getElementById('repo-select').value) formData.append('gitURL', document.getElementById('repo-select').value); 
             else if (document.getElementById('git-url').value) formData.append('gitURL', document.getElementById('git-url').value); 
             else if (document.getElementById('zip-file').files[0]) formData.append('file', document.getElementById('zip-file').files[0]); 
@@ -434,6 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Deployment started!', 'success'); 
             hideModals(); e.target.reset(); setTimeout(fetchAndRenderProjects, 2000); 
         } catch (error) { showToast(error.message, 'error'); } 
+        finally { btn.disabled = false; btn.innerHTML = 'Start Deploy Pipeline'; }
     });
 
     document.getElementById('app-studio-form').addEventListener('submit', async (e) => {
@@ -442,19 +440,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const projectId = document.getElementById('app-project-id').value;
         const platform = document.getElementById('app-platform').value;
         const appName = document.getElementById('app-name-input').value;
+        const iconFile = document.getElementById('app-icon-input').files[0];
 
         btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Compiling...';
         try {
             const formData = new FormData();
             formData.append('platform', platform);
             formData.append('appName', appName);
-            if (document.getElementById('app-icon-input').files[0]) formData.append('icon', document.getElementById('app-icon-input').files[0]);
+            if (iconFile) formData.append('icon', iconFile);
 
             await apiFetch(`/projects/${projectId}/build-app`, { method: 'POST', body: formData });
-            showToast('PWA Deployment Active!', 'success');
+            showToast('Compilation Active!', 'success');
             hideModals(); fetchAndRenderProjects(true);
         } catch (error) { showToast(error.message, 'error'); } 
-        finally { btn.disabled = false; btn.innerHTML = 'Compile PWA App'; }
+        finally { btn.disabled = false; btn.innerHTML = 'Compile Application'; }
     });
 
     document.getElementById('direct-compile-form').addEventListener('submit', async (e) => {
@@ -464,13 +463,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> Compiling...';
         statusDiv.classList.remove('hidden');
-        statusDiv.innerHTML = `<div class="text-amber-400 font-bold"><i class="fa-solid fa-spinner animate-spin"></i> Compiling VBS Launcher...</div>`;
+        statusDiv.innerHTML = `<div class="text-amber-400 font-bold"><i class="fa-solid fa-spinner animate-spin"></i> Compiling binary...</div>`;
 
         try {
             const formData = new FormData();
             formData.append('url', document.getElementById('direct-url').value);
             formData.append('appName', document.getElementById('direct-name').value);
-            formData.append('platform', document.getElementById('direct-platform').value);
+            const platform = document.getElementById('direct-platform').value;
+            formData.append('platform', platform);
 
             const data = await apiFetch('/build-app-direct', { method: 'POST', body: formData });
             
@@ -479,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check"></i> Package ready!</div>
                     <a href="${data.downloadUrl}" target="_blank" class="px-4 py-2 bg-emerald-500/10 text-emerald-400 hover:text-white rounded-lg text-xs font-bold"><i class="fa-solid fa-cloud-arrow-down"></i> Download</a>`;
                 btn.disabled = false; btn.innerHTML = 'Compile Application';
-            }, 5000);
+            }, 6000);
         } catch (error) { showToast(error.message, 'error'); btn.disabled = false; btn.innerHTML = 'Compile Application'; }
     });
 
