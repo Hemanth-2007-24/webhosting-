@@ -126,7 +126,7 @@ app.post('/api/projects', authenticateToken, async (req, res) => {
         const user = await User.findById(req.user.id);
         const subdomain = `${user.email.split('@')[0].replace(/[^a-z0-9]/g, '')}-${name.toLowerCase().replace(/[^a-z0-9-]/g, '')}`;
 
-        // Fixed: Automatically resolve and supply all schema-required fields to bypass Database Validation Errors
+        // Automatically resolve and supply all schema-required fields to bypass Database Validation Errors
         const appName = name;
         const platform = 'android';
         const websiteUrl = `${req.protocol}://${req.get('host')}/${subdomain}`;
@@ -268,7 +268,7 @@ app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, re
         const DEPLOYMENTS_DIR = path.join(__dirname, 'deployments');
         const projectDeployPath = path.join(DEPLOYMENTS_DIR, project._id.toString());
         
-        // Fixed: Force fully delete and recreate deployments folder to ensure absolute clean deployments
+        // Force fully delete and recreate deployments folder to ensure absolute clean deployments
         await fs.remove(projectDeployPath);
         await fs.ensureDir(projectDeployPath);
         
@@ -297,11 +297,76 @@ app.post('/api/deploy', authenticateToken, upload.single('file'), async (req, re
             await fs.remove(tempExtractDir);
             await fs.remove(req.file.path);
         }
+
+        // --- AUTOMATIC PWA REGENERATION & SOURCE PARSING ON REDEPLOY ---
+        // Dynamically injects PWA assets on redeploy if the project was previously compiled, preventing layout loss
+        if (project.appAndroidStatus === 'ready' || project.appWindowsStatus === 'ready') {
+            const cleanAppName = (project.appName || project.projectName || 'PWA App').trim();
+            const fallbackIcon = "https://cdn-icons-png.flaticon.com/512/5266/5266152.png";
+            let iconRelativePath = fallbackIcon;
+
+            const indexPath = path.join(projectDeployPath, 'index.html');
+            if (await fs.pathExists(indexPath)) {
+                const html = await fs.readFile(indexPath, 'utf8');
+                // Regex parser: Finds any custom website icon defined in index.html head tags
+                const iconRegex = /<link[^>]*rel=["'][^"']*(?:icon)[^"']*["'][^>]*href=["']([^"']+)["']/i;
+                const match = html.match(iconRegex);
+                if (match && match[1]) {
+                    iconRelativePath = match[1];
+                }
+            } else if (project.iconUrl) {
+                iconRelativePath = project.iconUrl;
+            }
+
+            const manifest = {
+                "name": cleanAppName,
+                "short_name": cleanAppName.substring(0, 15),
+                "start_url": "./",
+                "display": "standalone",
+                "background_color": "#ffffff",
+                "theme_color": "#2196F3",
+                "icons": [
+                    { "src": iconRelativePath, "sizes": "192x192", "type": "image/png" },
+                    { "src": iconRelativePath, "sizes": "512x512", "type": "image/png" }
+                ]
+            };
+            await fs.writeJson(path.join(projectDeployPath, 'manifest.json'), manifest, { spaces: 2 });
+
+            const swCode = `
+self.addEventListener('install', e => { e.waitUntil(caches.open('pwa-cache-${project._id}').then(c => c.addAll(['./', './index.html', './manifest.json']))); });
+self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then(res => res || fetch(e.request))); });
+            `;
+            await fs.writeFile(path.join(projectDeployPath, 'sw.js'), swCode.trim());
+
+            if (await fs.pathExists(indexPath)) {
+                let html = await fs.readFile(indexPath, 'utf8');
+                if (!html.includes('manifest.json')) {
+                    const injection = `
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('Service Worker Registered'));
+    }
+    // Intercept navigation events to force external links to resolve strictly within the PWA sandbox frame
+    document.addEventListener('click', function(e) {
+        var target = e.target.closest('a');
+        if (target && target.href) {
+            e.preventDefault();
+            window.location.href = target.href;
+        }
+    }, false);
+  </script>
+  <link rel="manifest" href="manifest.json">
+</head>`;
+                    html = html.replace(/<\/head>/i, injection);
+                    await fs.writeFile(indexPath, html);
+                }
+            }
+        }
         
-        // Reset compiled PWA/VBS configuration state on fresh deploy so user is prompted to compile again
         await Project.collection.updateOne(
             { _id: new mongoose.Types.ObjectId(projectId) },
-            { $set: { appWindowsStatus: 'none', appAndroidStatus: 'none', status: 'ready', rootDir: rootDir || '' } }
+            { $set: { status: 'ready', rootDir: rootDir || '' } }
         );
     } catch (error) {
         if (project) await project.updateOne({ status: 'failed' });
@@ -345,7 +410,20 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
                 const fallbackIcon = "https://cdn-icons-png.flaticon.com/512/5266/5266152.png";
                 let iconRelativePath = fallbackIcon;
                 
-                // Save custom icon to deployment folder safely
+                // Parse index.html to find any existing favicon inside the head section
+                const indexPath = path.join(deployDir, 'index.html');
+                if (await fs.pathExists(indexPath)) {
+                    const html = await fs.readFile(indexPath, 'utf8');
+                    const iconRegex = /<link[^>]*rel=["'][^"']*(?:icon)[^"']*["'][^>]*href=["']([^"']+)["']/i;
+                    const match = html.match(iconRegex);
+                    if (match && match[1]) {
+                        iconRelativePath = match[1];
+                    }
+                } else if (project.iconUrl) {
+                    iconRelativePath = project.iconUrl;
+                }
+
+                // Save custom icon to deployment folder safely if uploaded via App Studio
                 if (req.file) {
                     const ext = path.extname(req.file.originalname).toLowerCase() || '.png';
                     const iconName = `app-icon-${Date.now()}${ext}`;
@@ -359,14 +437,12 @@ app.post('/api/projects/:id/build-app', authenticateToken, upload.single('icon')
                         { $set: { iconUrl: iconRelativePath } }
                     );
                     await fs.remove(req.file.path);
-                } else if (project.iconUrl) {
-                    iconRelativePath = project.iconUrl;
                 }
                 
                 // DYNAMIC PROGRESSIVE WEB APP (PWA) MANIFEST INJECTION
                 const manifest = {
                     "name": cleanAppName,
-                    "short_name": "PWA App",
+                    "short_name": cleanAppName.substring(0, 15),
                     "start_url": "./",
                     "display": "standalone",
                     "background_color": "#ffffff",
@@ -384,7 +460,6 @@ self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then
                 `;
                 await fs.writeFile(path.join(deployDir, 'sw.js'), swCode.trim());
                 
-                const indexPath = path.join(deployDir, 'index.html');
                 if (await fs.pathExists(indexPath)) {
                     let html = await fs.readFile(indexPath, 'utf8');
                     if (!html.includes('manifest.json')) {
@@ -394,6 +469,14 @@ self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then
       navigator.serviceWorker.register('sw.js')
         .then(() => console.log('Service Worker Registered'));
     }
+    // Intercept navigation events to force external links to resolve strictly within the PWA sandbox frame
+    document.addEventListener('click', function(e) {
+        var target = e.target.closest('a');
+        if (target && target.href) {
+            e.preventDefault();
+            window.location.href = target.href;
+        }
+    }, false);
   </script>
   <link rel="manifest" href="manifest.json">
 </head>`;
